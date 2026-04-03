@@ -1,8 +1,4 @@
 #include "iGraphics.h"
-#include "level1ss.h"
-#include "BounceShooter.h"
-#include "Puzzle.h"
-#include "Boss1.h"
 
 #define MENU 0
 #define LEVEL1 1
@@ -16,8 +12,10 @@
 #define WARNING_SCREEN 9
 #define SECOND_BG 10
 #define BOSS_LEVEL 11
-#define NEW_LEVEL 12
-#define GAME_OVER 13
+#define BOSS_DEAD_IMAGE 12
+#define LAB_TRANSITION 13
+#define LAB_LEVEL 14
+#define PUZZLE_TRANSITION 15
 
 int gameState = MENU;
 unsigned int bgImage;
@@ -27,51 +25,166 @@ unsigned int enemySpritesheet;
 unsigned int finalBG;
 unsigned int digitalRainBG;
 unsigned int secondBG;
-unsigned int newPlayerSpritesheet;
-unsigned int npc1Spritesheet;
-unsigned int npc2Spritesheet;
+unsigned int chatgptImage;
+unsigned int puzzleTransitionBG;
 
-// ============================================================
-// NEW SIDE-SCROLLING LEVEL
-// ============================================================
-unsigned int newLevelBG[3];
-double scrollX = 0;               // world scroll offset
-double newPlayerX = 200;           // player screen X position
-double newPlayerY = 50;            // player Y (ground level)
-double newPlayerVelY = 0;          // vertical velocity for jump
-bool newPlayerOnGround = true;     // is the player on the ground?
-int newPlayerFrame = 0;            // animation frame (0-3)
-double newPlayerAnimTimer = 0;     // animation timing
-int newPlayerDir = 1;              // 1 = right, -1 = left
-bool newPlayerMoving = false;      // is the player walking?
-bool newPlayerIsShooting = false;  // is the player currently shooting?
-double newPlayerShootTimer = 0;    // timer to revert to idle/walking
-double newPlayerFireCooldown = 0;  // cooldown between shots
-bool arrowKeyLeft = false;         // arrow key states
-bool arrowKeyRight = false;
-bool arrowKeyUp = false;
+int puzzleTransitionPhase = 0;
+double puzzleTransitionTimer = 0;
+double puzzleTransitionAlpha = 0;
 
-int newPlayerHealth = 100;
-int newPlayerMaxHealth = 100;
-
-// Instantiating variables declared in level1ss.h
-NewLevelBullet newBullets[MAX_NEW_BULLETS];
-NewLevelEnemy newEnemies[MAX_NEW_ENEMIES];
-
-
-
-
+struct GravityTile {
+  int type;     // 0: Straight, 1: L-shape, 2: Cross
+  int rotation; // 0: 0, 1: 90, 2: 180, 3: 270 degrees
+  bool isActive;
+};
 
 GravityTile grid[4][4];
 double surpriseTimer = 5.0;
 double puzzleTimer = 30.0;
 bool puzzleCleared = false;
+bool puzzlePlayerInteracted = false;
 double screenShake = 0;
 double intelTimer = 5.0;
 double warningTimer = 5.0;
 double secondBGTimer = 10.0;
+double puzzleEnergyTimer = 0;
 
+struct PuzzleParticle {
+  double x, y;
+  double speed;
+  double alpha;
+  int size;
+};
+PuzzleParticle puzzleParticles[40];
 
+// ============================================================
+// LAB LEVEL - "New Mecca Labs" Anti-Gravity Corridor
+// ============================================================
+
+struct LabTurret {
+  double baseX, baseY; // Anchor point for movement
+  double x, y;         // Current position
+  int direction;       // 0=right, 1=left, 2=down
+  double fireTimer;
+  double fireInterval;
+  double beamTimer;
+  bool beamActive;
+
+  // Evolution features
+  int patternType;     // 0=Static, 1=Double, 2=Burst, 3=Alt
+  int burstCount;      // Tracking for burst pattern
+  double sweepRange;   // Range of horizontal/vertical sweep
+  double sweepSpeed;   // Movement speed
+  double sweepTime;    // Counter for oscillatory movement
+  double warningTimer; // Glow/blink before fire
+  bool isWarning;
+};
+
+struct LabPanel {
+  double x, y;
+  double w, h;
+  bool triggered;
+  bool fallen;
+  double fallSpeed;
+  double originalY;
+
+  // Evolution features
+  int sizeType;        // 0=Small, 1=Large
+  double warningTimer; // Cracking/shaking phase
+  bool isWarning;
+};
+
+struct AGZone {
+  double startX, endX;
+};
+
+struct ElectricFloor {
+  double x, w;
+  double offTime, onTime; // Standard timing
+  double timer;
+  bool isActive;
+};
+
+struct SpeedZone {
+  double startX, endX;
+  double multiplier;
+};
+
+struct LabAmbientParticle {
+  double x, y;
+  double vx, vy;
+  double size;
+  double alpha;
+  double life;
+};
+#define LAB_NUM_PARTICLES 60
+LabAmbientParticle labParticles[LAB_NUM_PARTICLES];
+
+double labScrollX = 0;
+double labPlayerX = 150, labPlayerY = 105;
+double labPlayerVY = 0;
+bool labOnCeiling = false;
+bool labIsJumping = false;
+double labPlayerHealth = 100;
+bool labPlayerFacingRight = true;
+double labCorridorLength = 5120;
+double labFloorY = 80;
+double labCeilingY = 540;
+
+double labTransitionTimer = 3.0;
+double labTransitionAlpha = 0;
+int labTransitionPhase = 0; // 0=fade out boss, 1=show title, 2=fade into lab
+double labDamageFlash = 0;
+
+// Survival Refinement
+double labDashTimer = 0;
+double labDashCooldown = 0;
+double labInstructionTimer = 0;
+const double LAB_MAX_HEALTH = 100;
+const double LAB_MAX_HULL = 150;
+
+#define LAB_NUM_TURRETS 8
+#define LAB_NUM_PANELS 6
+#define LAB_NUM_AGZONES 3
+#define LAB_NUM_ELECTRIC 4
+#define LAB_NUM_SPEED 2
+
+#define LAB_NUM_HEALING 3
+
+struct HealingZone {
+  double startX, endX;
+};
+
+LabTurret labTurrets[LAB_NUM_TURRETS];
+LabPanel labPanels[LAB_NUM_PANELS];
+AGZone labAGZones[LAB_NUM_AGZONES];
+ElectricFloor labElectricFloors[LAB_NUM_ELECTRIC];
+SpeedZone labSpeedZones[LAB_NUM_SPEED];
+HealingZone labHealingZones[LAB_NUM_HEALING];
+
+struct Bullet {
+  double x, y;
+  double dx, dy;
+  bool active;
+};
+
+struct Enemy {
+  double x, y;
+  bool active;
+  int health;
+  int animFrame;
+  double animTimer;
+  int dir;           // 1 = right, -1 = left
+  double minX, maxX; // patrol bounds
+};
+struct Player {
+  double x, y;
+  int health;
+  bool isShooting;
+  int shootFrame;
+  double shootTimer;
+  double reloadTimer; // Cooldown between shots
+};
 
 Player player = {100, 32, 100, false, 0, 0, 0}; // y=32 means feet on ground
 Bullet bullets[100];
@@ -106,7 +219,7 @@ double phase3BossY = 520;
 int phase3BossHealth = 250;
 int phase3AwarenessLevel = 0;
 
-
+enum BossState { P3_OBSERVE, P3_HUNT, P3_EXECUTE, P3_DUEL, P3_DEAD };
 BossState phase3BossState = P3_OBSERVE;
 bool strikeWindowActive = false;
 double phase3SearchAngle = -1.5708;
@@ -114,7 +227,7 @@ double phase3SearchDir = 1.0;
 double phase3BossLastSeenX = 512;
 double phase3BossLastSeenY = 320;
 double phase3BossMoveTimer = 0;
-
+enum Phase3Attack { P3_ATK_NONE, P3_ATK_HEAVY, P3_ATK_FEINT, P3_ATK_SHOCKWAVE };
 Phase3Attack phase3BossAttack = P3_ATK_NONE;
 double phase3BossAtkTimer = 0;
 double phase3StrikeTimer = 0;
@@ -126,21 +239,27 @@ double phase3BossChargeY = 0;
 int phase3SealsActivated = 0;
 
 // Shadow zones
-
+struct P3Shadow {
+  double x, y, w, h;
+};
 P3Shadow phase3Shadows[6];
 
 // Pillars
-
+struct P3Pillar {
+  double x, y, w, h;
+};
 P3Pillar phase3Pillars[4];
 
 // Seals
-
+struct P3Seal {
+  double x, y;
+  bool activated;
+};
 P3Seal phase3Seals[3];
 
 // Key state tracking - use the framework's keyPressed[] for reliability
 bool keyStates[256] = {false};
 bool p3IsKeyPressed(unsigned char k) { return keyPressed[k] || keyStates[k]; }
-
 
 void iShowSubImage(int x, int y, int width, int height, unsigned int texture,
                    int sx, int sy, int sw, int sh, int tw, int th) {
@@ -232,64 +351,120 @@ bool isTilePortOpen(int row, int col, int port) {
   }
   if (type == 2)
     return true;
+  if (type == 3) { // T-Junction
+    if (rot == 0)
+      return (port == 3 || port == 1 || port == 0); // L, R, T
+    if (rot == 1)
+      return (port == 0 || port == 1 || port == 2); // T, R, B
+    if (rot == 2)
+      return (port == 1 || port == 2 || port == 3); // R, B, L
+    if (rot == 3)
+      return (port == 2 || port == 3 || port == 0); // B, L, T
+  }
   return false;
 }
 
 // Helper: check if the grid is already solved (path from (0,0) to (3,3))
 bool isPuzzleAlreadySolved() {
+  // Reset all active states first
+  for (int i = 0; i < 4; i++)
+    for (int j = 0; j < 4; j++)
+      grid[i][j].isActive = false;
+
+  // Power starts at CORE (Left of (0,0) -> Port 3)
+  if (!isTilePortOpen(0, 0, 3))
+    return false;
+
   bool visited[4][4] = {false};
   int stackR[16], stackC[16], top = -1;
   stackR[++top] = 0;
   stackC[top] = 0;
   visited[0][0] = true;
+  grid[0][0].isActive = true;
 
-  int dr[] = {-1, 1, 0, 0};
+  int dr[] = {-1, 1, 0, 0}; // U, D, L, R
   int dc[] = {0, 0, -1, 1};
   int p[] = {0, 2, 3, 1};
   int opp[] = {2, 0, 1, 3};
 
+  bool reachedLock = false;
+
   while (top >= 0) {
     int r = stackR[top], c = stackC[top--];
-    if (r == 3 && c == 3)
-      return true;
+
+    // Check if reached LOCK at (3,3) and Output Port 1 (Right) is open
+    if (r == 3 && c == 3 && isTilePortOpen(3, 3, 1))
+      reachedLock = true;
 
     for (int i = 0; i < 4; i++) {
       int nr = r + dr[i], nc = c + dc[i];
       if (nr >= 0 && nr < 4 && nc >= 0 && nc < 4 && !visited[nr][nc]) {
+        // Must have matching ports open
         if (isTilePortOpen(r, c, p[i]) && isTilePortOpen(nr, nc, opp[i])) {
           visited[nr][nc] = true;
+          grid[nr][nc].isActive = true;
           stackR[++top] = nr;
           stackC[top] = nc;
         }
       }
     }
   }
-  return false;
+  return reachedLock;
 }
 
 void initPuzzle() {
   srand(time(NULL));
-  // Randomize tile types once
+  puzzlePlayerInteracted = false;
+  puzzleTimer = 25.0; // EXTREME Difficulty: 25s
+  puzzleCleared = false;
+
+  // Strategic T-junction layout (Medium-High difficulty)
+  // Types: 0=Straight, 1=L, 2=Cross, 3=T
+  struct LayoutTile {
+    int type;
+    int correctRot;
+  };
+  LayoutTile layout[4][4] = {
+      {{3, 2}, {1, 0}, {3, 1}, {1, 1}}, // Row 0
+      {{1, 3}, {3, 3}, {3, 1}, {1, 2}}, // Row 1
+      {{3, 0}, {1, 2}, {3, 3}, {1, 1}}, // Row 2
+      {{1, 1}, {3, 3}, {1, 3}, {3, 0}}  // Row 3
+  };
+
   for (int i = 0; i < 4; i++) {
     for (int j = 0; j < 4; j++) {
-      grid[i][j].type = rand() % 3; // 0, 1, 2
+      grid[i][j].type = layout[i][j].type;
       grid[i][j].rotation = rand() % 4;
       grid[i][j].isActive = false;
     }
   }
 
-  // Re-randomize rotations until the puzzle is NOT already solved
-  int maxAttempts = 100; // Safety limit to avoid infinite loop
-  while (isPuzzleAlreadySolved() && maxAttempts-- > 0) {
+  // Shuffling loop: Guaranteed UNSOLVED start
+  int safety = 0;
+  while (isPuzzleAlreadySolved() && safety < 100) {
     for (int i = 0; i < 4; i++) {
       for (int j = 0; j < 4; j++) {
         grid[i][j].rotation = rand() % 4;
       }
     }
+    safety++;
   }
 
-  puzzleTimer = 30.0;
-  puzzleCleared = false;
+  puzzleTimer = 35.0; // Medium-High duration
+
+  // Clear isActive after initialization/shuffling
+  for (int i = 0; i < 4; i++)
+    for (int j = 0; j < 4; j++)
+      grid[i][j].isActive = false;
+
+  // Initialize Particles
+  for (int i = 0; i < 40; i++) {
+    puzzleParticles[i].x = rand() % 1024;
+    puzzleParticles[i].y = rand() % 640;
+    puzzleParticles[i].speed = 1.0 + (rand() % 100) / 50.0;
+    puzzleParticles[i].alpha = (rand() % 100) / 100.0;
+    puzzleParticles[i].size = 2 + rand() % 4;
+  }
 }
 
 void drawLevel1() {
@@ -401,17 +576,29 @@ void drawMenu() {
   }
   iText(120, 215, "CREDITS", GLUT_BITMAP_HELVETICA_12);
 
-  // Button 4: EXIT
+  // Button 4: LAB LEVEL (NEW)
   if (iMouseX >= 98 && iMouseX <= 248 && iMouseY >= 150 && iMouseY <= 190) {
-    iSetColor(100, 0, 0); // Darker red on hover
+    iSetColor(0, 120, 180); // Neon blue on hover
     iFilledRectangle(98, 150, 150, 40);
     iSetColor(255, 255, 255);
   } else {
-    iSetColor(30, 30, 30);
+    iSetColor(0, 60, 100);
     iFilledRectangle(98, 150, 150, 40);
+    iSetColor(180, 240, 255);
+  }
+  iText(120, 165, "LAB LEVEL", GLUT_BITMAP_HELVETICA_12);
+
+  // Button 5: EXIT
+  if (iMouseX >= 98 && iMouseX <= 248 && iMouseY >= 100 && iMouseY <= 140) {
+    iSetColor(100, 0, 0); // Darker red on hover
+    iFilledRectangle(98, 100, 150, 40);
+    iSetColor(255, 255, 255);
+  } else {
+    iSetColor(30, 30, 30);
+    iFilledRectangle(98, 100, 150, 40);
     iSetColor(160, 160, 160);
   }
-  iText(120, 165, "EXIT", GLUT_BITMAP_HELVETICA_12);
+  iText(135, 115, "EXIT", GLUT_BITMAP_HELVETICA_12);
 
   // Decorative Brackets (Top Left)
   iSetColor(180, 0, 0);
@@ -484,6 +671,20 @@ void drawOptions() {
   iText(350, 300, "- ENEMIES: DEFEAT TO CLEAR STAGE", GLUT_BITMAP_HELVETICA_18);
   iText(350, 250, "- WALLS: BULLETS REFLECT OFF STONE",
         GLUT_BITMAP_HELVETICA_18);
+
+  // Level selection (NEW)
+  iSetColor(0, 150, 255);
+  iText(350, 180, "LEVEL SELECT", GLUT_BITMAP_HELVETICA_18);
+  if (iMouseX >= 350 && iMouseX <= 550 && iMouseY >= 130 && iMouseY <= 170) {
+    iSetColor(0, 150, 100); // Hover green-blue
+    iFilledRectangle(350, 130, 200, 40);
+    iSetColor(255, 255, 255);
+  } else {
+    iSetColor(0, 60, 100);
+    iFilledRectangle(350, 130, 200, 40);
+    iSetColor(180, 240, 255);
+  }
+  iText(375, 145, "START LABORATORY", GLUT_BITMAP_HELVETICA_10);
 
   // Back Button Instruction
   iSetColor(180, 0, 0);
@@ -820,7 +1021,7 @@ void drawPhase3HUD() {
   iSetColor(0, 200, 255);
   iText(20, 590, buf, GLUT_BITMAP_HELVETICA_12);
   iSetColor(100, 100, 100);
-  iText(20, 30, "WASD:Move C:Crouch SPACE:Dodge CLICK:Attack F:Decoy E:Seal",
+  iText(20, 30, "WASD:Move C:Crouch SPACE:Dodge P:Attack F:Decoy E:Seal",
         GLUT_BITMAP_HELVETICA_12);
 
   if (phase3BossState == P3_DEAD) {
@@ -1022,9 +1223,9 @@ void updatePhase3Player() {
                       phase3BossLastSeenX - phase3BossX);
     double ad = ap - ba;
     while (ad > 3.14159)
-      ad -= 3.28318;
+      ad -= 6.28318;
     while (ad < -3.14159)
-      ad += 3.28318;
+      ad += 6.28318;
     phase3CriticalStrikeReady = (dist < 120 && (ad > 1.2 || ad < -1.2));
   } else
     phase3CriticalStrikeReady = false;
@@ -1036,17 +1237,15 @@ void updatePhase3Player() {
 }
 
 void updatePhase3Boss() {
-  if (phase3BossState == P3_DEAD) {
+  if (phase3BossState == P3_DEAD || phase3PlayerHealth <= 0) {
     phase3BossVictoryTimer -= 0.016;
     if (phase3BossVictoryTimer <= 0) {
-      gameState = MENU; // Transition to Menu
+      if (phase3BossState == P3_DEAD) {
+        gameState = BOSS_DEAD_IMAGE;
+      } else {
+        gameState = MENU; // Player died
+      }
     }
-    return;
-  }
-  if (phase3PlayerHealth <= 0) {
-    phase3BossVictoryTimer -= 0.016;
-    if (phase3BossVictoryTimer <= 0)
-      gameState = MENU;
     return;
   }
   if (phase3BossState == P3_OBSERVE) {
@@ -1073,8 +1272,8 @@ void updatePhase3Boss() {
     double dx = tX - phase3BossX, dy = tY - phase3BossY;
     double dist = sqrt(dx * dx + dy * dy);
     if (dist > 5) {
-      phase3BossX += (dx / dist) * 2.5;
-      phase3BossY += (dy / dist) * 2.5;
+      phase3BossX += (dx / dist) * 0.6;
+      phase3BossY += (dy / dist) * 0.6;
     }
     if (sqrt(pow(phase3PlayerX - phase3BossX, 2) +
              pow(phase3PlayerY - phase3BossY, 2)) < 80) {
@@ -1103,8 +1302,8 @@ void updatePhase3Boss() {
     double dx = phase3PlayerX - phase3BossX, dy = phase3PlayerY - phase3BossY;
     double dist = sqrt(dx * dx + dy * dy);
     if (dist > 5) {
-      phase3BossX += (dx / dist) * 4.0;
-      phase3BossY += (dy / dist) * 4.0;
+      phase3BossX += (dx / dist) * 0.9;
+      phase3BossY += (dy / dist) * 0.9;
     }
     phase3SearchAngle = atan2(dy, dx);
     if (dist < 40 && !phase3DodgeActive)
@@ -1126,8 +1325,8 @@ void updatePhase3Boss() {
     double dx = phase3PlayerX - phase3BossX, dy = phase3PlayerY - phase3BossY;
     double dist = sqrt(dx * dx + dy * dy);
     if (dist > 80) {
-      phase3BossX += (dx / dist) * 2.0;
-      phase3BossY += (dy / dist) * 2.0;
+      phase3BossX += (dx / dist) * 0.5;
+      phase3BossY += (dy / dist) * 0.5;
     }
     if (phase3BossX < 30)
       phase3BossX = 30;
@@ -1193,267 +1392,884 @@ void drawIntel() {
   iText(400, 130, buf, GLUT_BITMAP_HELVETICA_12);
 }
 
+// ============================================================
+// LAB LEVEL FUNCTIONS
+// ============================================================
+
+void initLabLevel() {
+  labScrollX = 0;
+  labPlayerX = 150;
+  labPlayerY = labFloorY + 25;
+  labInstructionTimer = 7.0;
+  labPlayerVY = 0;
+  labOnCeiling = false;
+  labIsJumping = false;
+  labPlayerHealth = 100;
+  labPlayerFacingRight = true;
+  labDamageFlash = 0;
+
+  // Anti-gravity zones (Strategically placed where verticality is needed)
+  labAGZones[0] = {1200, 1600}; // Sector 1/2 transition
+  labAGZones[1] = {2800, 3400}; // Sector 2/3 transition
+  labAGZones[2] = {4200, 4800}; // Sector 3 final gauntlet
+
+  // Sector 1: Early (Basic static/double)
+  labTurrets[0] = {500,   200, 500, 200, 0, 0, 3.0, 0,
+                   false, 0,   0,   0,   0, 0, 0,   false};
+  labTurrets[1] = {1350,  labCeilingY, 1350, labCeilingY, 2, 0, 3.5, 0,
+                   false, 1,           0,    0,           0, 0, 0,   false};
+
+  // Sector 2: Mid (Burst and Sweep)
+  labTurrets[2] = {2100,  150, 2100, 150, 0,   0, 3.0, 0,
+                   false, 2,   0,    60,  1.5, 0, 0,   false};
+  labTurrets[3] = {2600,  320, 2600, 320, 1, 0, 2.5, 0,
+                   false, 1,   0,    0,   0, 0, 0,   false};
+  labTurrets[4] = {3000,  labCeilingY, 3000, labCeilingY, 2,   0, 3.0, 0,
+                   false, 2,           0,    120,         1.0, 0, 0,   false};
+
+  // Sector 3: Late (Alternating and Fast Sweep)
+  labTurrets[5] = {3800,  250, 3800, 250, 0,   0, 2.0, 0,
+                   false, 3,   0,    100, 2.0, 0, 0,   false};
+  labTurrets[6] = {4400,  labCeilingY, 4400, labCeilingY, 2,   0, 2.0, 0,
+                   false, 3,           0,    180,         1.5, 0, 0,   false};
+  labTurrets[7] = {4900,  labCeilingY, 4900, labCeilingY, 2, 0, 2.0, 0,
+                   false, 2,           0,    0,           0, 0, 0,   false};
+
+  // === HAZARD: FALLING PANELS ===
+  // sizeType: 0=Small, 1=Large
+  labPanels[0] = {650, labCeilingY - 20, 40, 40, false, false,
+                  0,   labCeilingY - 20, 0,  0,  false}; // Small
+  labPanels[1] = {1800, labCeilingY - 30, 140, 30, false, false,
+                  0,    labCeilingY - 30, 1,   0,  false}; // Large
+  labPanels[2] = {2600, labCeilingY - 20, 50, 50, false, false,
+                  0,    labCeilingY - 20, 0,  0,  false}; // Small (Moved out of
+                                                          // healing zone)
+  labPanels[3] = {3250, labCeilingY - 30, 120, 35, false, false,
+                  0,    labCeilingY - 30, 1,   0,  false}; // Large
+  labPanels[4] = {3800, labCeilingY - 20, 45, 45, false, false,
+                  0,    labCeilingY - 20, 0,  0,  false}; // Small
+  labPanels[5] = {4600, labCeilingY - 40, 180, 40, false, false,
+                  0,    labCeilingY - 40, 1,   0,  false}; // Large (Huge)
+
+  // === HAZARD: ELECTRIC FLOORS ===
+  labElectricFloors[0] = {1380, 200, 2.0, 1.0, 0, false};
+  labElectricFloors[1] = {2100, 300, 1.5, 0.8, 0, false};
+  labElectricFloors[2] = {3500, 250, 3.0, 1.5, 0, false};
+  labElectricFloors[3] = {4450, 400, 1.0, 2.0, 0, false};
+
+  // === HEALING ZONES (Green Zones) ===
+  labHealingZones[0] = {600, 900};   // Sector 1 Safe (Clear of turret 0)
+  labHealingZones[1] = {2200, 2500}; // Sector 2 Safe (Clear of panel 2)
+  labHealingZones[2] = {4000, 4300}; // Sector 3 Safe
+
+  // === SPEED ZONES ===
+  labSpeedZones[0] = {1800, 2100, 1.3}; // 30% boost
+  labSpeedZones[1] = {3400, 3800, 1.5}; // 50% boost
+
+  // === AMBIENT PARTICLES ===
+  for (int i = 0; i < LAB_NUM_PARTICLES; i++) {
+    labParticles[i].life = 0; // Force respawn
+  }
+}
+
+void drawBossDeadImage() {
+  // Show the ChatGPT image full screen
+  iShowImage(0, 0, 1024, 640, chatgptImage);
+
+  // Overlay with slight vignette
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(0.0f, 0.0f, 0.0f, 0.3f);
+  glBegin(GL_QUADS);
+  glVertex2f(0, 0);
+  glVertex2f(1024, 0);
+  glVertex2f(1024, 80);
+  glVertex2f(0, 80);
+  glEnd();
+  glDisable(GL_BLEND);
+
+  // Text prompt
+  iSetColor(255, 255, 255);
+  iText(350, 50, "THE SENTINEL HAS FALLEN", GLUT_BITMAP_TIMES_ROMAN_24);
+  iSetColor(180, 0, 0);
+  iText(370, 20, "CLICK ANYWHERE TO CONTINUE", GLUT_BITMAP_HELVETICA_12);
+}
+
+void drawLabTransition() {
+  // Cinematic transition: fade to black → show title → fade into lab
+  iSetColor(0, 0, 0);
+  iFilledRectangle(0, 0, 1024, 640);
+
+  if (labTransitionPhase == 0) {
+    // Phase 0: Fade to black (already black)
+    // Just show fading text
+    double alpha = 1.0 - (labTransitionTimer / 1.0);
+    if (alpha > 1.0)
+      alpha = 1.0;
+    if (alpha < 0.0)
+      alpha = 0.0;
+    int brightness = (int)(255 * alpha);
+    iSetColor(brightness, brightness, brightness);
+    iText(380, 340, "ENTERING...", GLUT_BITMAP_TIMES_ROMAN_24);
+  } else if (labTransitionPhase == 1) {
+    // Phase 1: Show lab name with dramatic reveal
+    // Red scanning line effect
+    double scanY = 640 * (1.0 - labTransitionTimer / 2.0);
+    iSetColor(180, 0, 0);
+    iLine(100, scanY, 924, scanY);
+    iLine(100, scanY + 1, 924, scanY + 1);
+
+    // Lab name
+    iSetColor(0, 200, 255);
+    iText(320, 360, "NEW MECCA LABS", GLUT_BITMAP_TIMES_ROMAN_24);
+
+    // Subtitle
+    iSetColor(100, 150, 180);
+    iText(340, 320, "ANTI-GRAVITY RESEARCH CORRIDOR", GLUT_BITMAP_HELVETICA_12);
+
+    // Warning text
+    iSetColor(255, 60, 60);
+    iText(360, 260, ">> HAZARD LEVEL: CRITICAL <<", GLUT_BITMAP_HELVETICA_12);
+
+    // Decorative corners
+    iSetColor(0, 150, 255);
+    iLine(100, 420, 140, 420);
+    iLine(100, 420, 100, 380);
+    iLine(924, 420, 884, 420);
+    iLine(924, 420, 924, 380);
+    iLine(100, 240, 140, 240);
+    iLine(100, 240, 100, 280);
+    iLine(924, 240, 884, 240);
+    iLine(924, 240, 924, 280);
+
+    // Progress bar
+    double progress = 1.0 - (labTransitionTimer / 2.0);
+    iSetColor(0, 80, 120);
+    iFilledRectangle(300, 200, 400, 8);
+    iSetColor(0, 200, 255);
+    iFilledRectangle(300, 200, (int)(400 * progress), 8);
+  } else {
+    // Phase 2: Fade into lab (brief flash)
+    double alpha = labTransitionTimer / 0.5;
+    if (alpha > 1.0)
+      alpha = 1.0;
+    int brightness = (int)(255 * (1.0 - alpha));
+    iSetColor(brightness, brightness, brightness);
+    iFilledRectangle(0, 0, 1024, 640);
+  }
+}
+
+void drawLabInstructions() {
+  if (labInstructionTimer <= 0)
+    return;
+
+  // Calculate fade-in and fade-out
+  double alpha = 1.0;
+  if (labInstructionTimer > 6.0)
+    alpha = (7.0 - labInstructionTimer); // Fade in over 1s
+  else if (labInstructionTimer < 1.0)
+    alpha = labInstructionTimer; // Fade out over 1s
+
+  if (alpha > 1.0)
+    alpha = 1.0;
+  if (alpha < 0)
+    alpha = 0;
+
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  // Background box
+  glColor4f(0.0f, 0.05f, 0.1f, (float)(0.8 * alpha));
+  iFilledRectangle(250, 150, 524, 300);
+
+  // Borders
+  glColor4f(0.0f, 0.6f, 1.0f, (float)(alpha));
+  iRectangle(250, 150, 524, 300);
+  iRectangle(252, 152, 520, 296);
+
+  // Header
+  iSetColor((int)(0 * alpha), (int)(200 * alpha), (int)(255 * alpha));
+  iText(380, 410, "MISSION PROTOCOLS", GLUT_BITMAP_TIMES_ROMAN_24);
+
+  // Instructions
+  iSetColor((int)(255 * alpha), (int)(255 * alpha), (int)(255 * alpha));
+  iText(300, 360, "A / D  - MOVE LEFT / RIGHT", GLUT_BITMAP_HELVETICA_18);
+  iText(300, 320, "W / SPACE - FLIP GRAVITY (IN AG ZONES)",
+        GLUT_BITMAP_HELVETICA_18);
+  iText(300, 280, "X - EMERGENCY DASH", GLUT_BITMAP_HELVETICA_18);
+
+  // Zone info
+  iSetColor((int)(0 * alpha), (int)(200 * alpha), (int)(255 * alpha));
+  iText(300, 230, "[ BLUE ZONES ] : ANTI-GRAVITY ENABLED",
+        GLUT_BITMAP_HELVETICA_12);
+  iSetColor((int)(0 * alpha), (int)(255 * alpha), (int)(100 * alpha));
+  iText(300, 210, "[ GREEN ZONES ] : HULL REGENERATION",
+        GLUT_BITMAP_HELVETICA_12);
+
+  // Warning
+  iSetColor((int)(255 * alpha), (int)(50 * alpha), (int)(50 * alpha));
+  iText(300, 175, "SYSTEM ADAPTATION REQUIRED FOR SURVIVAL",
+        GLUT_BITMAP_HELVETICA_10);
+
+  glDisable(GL_BLEND);
+}
+
+void drawLabLevel() {
+  // Camera follows player
+  double camX = labPlayerX - 300;
+  if (camX < 0)
+    camX = 0;
+  if (camX > labCorridorLength - 1024)
+    camX = labCorridorLength - 1024;
+
+  // === BACKGROUND ===
+  double bgW = 1024, bgH = 640;
+  for (int i = -1; i < (int)(labCorridorLength / bgW) + 2; i++) {
+    double bx = i * bgW - (camX * 0.5); // Parallax factor 0.5
+    if (bx + bgW > 0 && bx < 1024) {
+      iShowImage((int)bx, 0, (int)bgW, (int)bgH, chatgptImage);
+    }
+  }
+
+  // Dark overlay for visibility
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(0.0f, 0.0f, 0.0f, 0.5f);
+  iFilledRectangle(0, 0, 1024, 640);
+  glDisable(GL_BLEND);
+
+  glPushMatrix();
+  glTranslatef(-camX, 0, 0);
+
+  // === AMBIENT PARTICLES (Dust) ===
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  for (int i = 0; i < LAB_NUM_PARTICLES; i++) {
+    if (labParticles[i].life > 0) {
+      glColor4f(0.8f, 0.9f, 1.0f, (float)labParticles[i].alpha);
+      iFilledCircle(labParticles[i].x, labParticles[i].y, labParticles[i].size);
+    }
+  }
+  glDisable(GL_BLEND);
+
+  // Corridor Floor/Ceiling
+  iSetColor(30, 30, 50);
+  iFilledRectangle(camX, 0, 1024, labFloorY);
+  iFilledRectangle(camX, labCeilingY, 1024, 640 - labCeilingY);
+  iSetColor(100, 150, 255);
+  iLine(camX, labFloorY, camX + 1024, labFloorY);
+  iLine(camX, labCeilingY, camX + 1024, labCeilingY);
+
+  // === SPEED ZONES ===
+  for (int i = 0; i < LAB_NUM_SPEED; i++) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.0f, 1.0f, 1.0f, 0.15f);
+    iFilledRectangle(labSpeedZones[i].startX, labFloorY,
+                     labSpeedZones[i].endX - labSpeedZones[i].startX,
+                     labCeilingY - labFloorY);
+    glColor4f(0.0f, 1.0f, 1.0f, 0.4f);
+    for (int s = 0; s < 5; s++) {
+      double sx = labSpeedZones[i].startX +
+                  (int)(secondBGTimer * 200 + s * 100) %
+                      (int)(labSpeedZones[i].endX - labSpeedZones[i].startX);
+      iLine(sx, labFloorY, sx + 20, labFloorY + 50);
+    }
+    glDisable(GL_BLEND);
+  }
+
+  // === SAFE ZONES (AG Fields) ===
+  for (int i = 0; i < LAB_NUM_AGZONES; i++) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    double glow = 0.2 + 0.1 * sin(secondBGTimer * 4);
+    glColor4f(0.0f, 0.6f, 1.0f, (float)glow);
+    iFilledRectangle(labAGZones[i].startX, labFloorY,
+                     labAGZones[i].endX - labAGZones[i].startX,
+                     labCeilingY - labFloorY);
+
+    // Border Glow
+    glColor4f(0.4f, 0.8f, 1.0f, 0.5f);
+    iRectangle(labAGZones[i].startX, labFloorY,
+               labAGZones[i].endX - labAGZones[i].startX,
+               labCeilingY - labFloorY);
+    glDisable(GL_BLEND);
+
+    // Safe Zone Label
+    iSetColor(255, 255, 255);
+    iText(labAGZones[i].startX + 10, labFloorY + 10, "ANTI-GRAVITY FIELD",
+          GLUT_BITMAP_HELVETICA_12);
+
+    // Ceiling Markings
+    iSetColor(0, 100, 255);
+    iLine(labAGZones[i].startX, labCeilingY, labAGZones[i].endX, labCeilingY);
+    iLine(labAGZones[i].startX, labCeilingY - 2, labAGZones[i].endX,
+          labCeilingY - 2);
+  }
+
+  // === HEALING ZONES ===
+  for (int i = 0; i < LAB_NUM_HEALING; i++) {
+    double healPulse = 0.15 + 0.1 * sin(secondBGTimer * 6);
+    // Full height subtle glow (Works for walls and ceilings)
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    glColor4f(0.0f, 1.0f, 0.4f, (float)(0.15 * healPulse));
+    iFilledRectangle(labHealingZones[i].startX, 0,
+                     labHealingZones[i].endX - labHealingZones[i].startX, 640);
+    glDisable(GL_BLEND);
+
+    // Hazard-free Border
+    iSetColor(0, 255, 100);
+    iRectangle(labHealingZones[i].startX, labFloorY,
+               labHealingZones[i].endX - labHealingZones[i].startX,
+               labCeilingY - labFloorY);
+
+    // Healing Zone Header
+    iSetColor(255, 255, 255);
+    iText(labHealingZones[i].startX + 10, labFloorY + 10, "REPAIR HARMONICS",
+          GLUT_BITMAP_HELVETICA_12);
+
+    // Floating Plus symbols (Enhanced)
+    glEnable(GL_BLEND);
+    glBlendFunc(
+        GL_SRC_ALPHA,
+        GL_ONE_MINUS_SRC_ALPHA); // Ensure correct blend for plus symbols
+    for (int p = 0; p < 8; p++) {
+      double px = labHealingZones[i].startX + 15 + p * 35;
+      double py = (int)(secondBGTimer * 80 + p * 40) % 640;
+      glColor4f(0.5f, 1.0f, 0.6f, (float)(0.6 * healPulse));
+      iFilledRectangle(px - 1, py - 6, 2, 12);
+      iFilledRectangle(px - 6, py - 1, 12, 2);
+    }
+    glDisable(GL_BLEND);
+  }
+
+  // === ELECTRIC FLOORS ===
+  for (int i = 0; i < LAB_NUM_ELECTRIC; i++) {
+    if (labElectricFloors[i].isActive) {
+      // Neon Yellow Shimmer
+      glEnable(GL_BLEND);
+      glColor4f(1.0f, 1.0f, 0.0f, 0.4f + (float)sin(secondBGTimer * 20) * 0.2f);
+      iFilledRectangle(labElectricFloors[i].x, labFloorY - 5,
+                       labElectricFloors[i].w, 5);
+      glDisable(GL_BLEND);
+
+      // Neon Yellow Arcs
+      iSetColor(255, 255, 100);
+      for (int a = 0; a < 6; a++) {
+        double ax =
+            labElectricFloors[i].x + rand() % (int)labElectricFloors[i].w;
+        double ay = labFloorY;
+        for (int seg = 0; seg < 3; seg++) {
+          double nax = ax + (rand() % 16 - 8);
+          double nay = ay + (rand() % 15 + 5);
+          iLine(ax, ay, nax, nay);
+          ax = nax;
+          ay = nay;
+        }
+      }
+    } else {
+      iSetColor(40, 40, 80);
+      iFilledRectangle(labElectricFloors[i].x, labFloorY - 5,
+                       labElectricFloors[i].w, 5);
+    }
+  }
+
+  // === TURRETS & LASERS ===
+  for (int i = 0; i < LAB_NUM_TURRETS; i++) {
+    // Hover animation
+    double hoverY = sin(secondBGTimer * 3 + i) * 6;
+    double tx = labTurrets[i].x, ty = labTurrets[i].y + hoverY;
+
+    // Warning glow
+    if (labTurrets[i].isWarning) {
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glColor4f(1.0f, 0.0f, 0.0f, 0.5f + (float)sin(secondBGTimer * 15) * 0.4f);
+      iFilledCircle(tx, ty, 18);
+      glDisable(GL_BLEND);
+    }
+    // Emitter (Metallic Accent)
+    iSetColor(60, 60, 75);
+    iFilledRectangle(tx - 12, ty - 12, 24, 24);
+    iSetColor(150, 150, 180); // Highlight
+    iLine(tx - 12, ty + 12, tx + 12, ty + 12);
+
+    iSetColor(255, 0, 0);
+    iFilledCircle(tx, ty, 5);
+
+    // Beam
+    if (labTurrets[i].beamActive) {
+      iSetColor(255, 0, 0);
+      if (labTurrets[i].direction == 0)
+        iFilledRectangle(tx + 12, ty - 2, 2000, 4);
+      else if (labTurrets[i].direction == 1)
+        iFilledRectangle(tx - 2000, ty - 2, 2000 - 12, 4);
+      else if (labTurrets[i].direction == 2)
+        iFilledRectangle(tx - 2, labFloorY, 4, ty - labFloorY - 12);
+
+      // Beam glow
+      glEnable(GL_BLEND);
+      glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+      glColor4f(1.0f, 0.0f, 0.0f, 0.3f);
+      if (labTurrets[i].direction == 2)
+        iFilledRectangle(tx - 6, labFloorY, 12, ty - labFloorY - 12);
+      glDisable(GL_BLEND);
+    }
+  }
+
+  // === FALLING PANELS ===
+  for (int i = 0; i < LAB_NUM_PANELS; i++) {
+    if (!labPanels[i].fallen) {
+      double px = labPanels[i].x, py = labPanels[i].y;
+
+      // Hover animation for untriggered panels
+      if (!labPanels[i].triggered) {
+        py += sin(secondBGTimer * 2 + i) * 3;
+      }
+
+      if (labPanels[i].isWarning) {
+        px += (rand() % 6 - 3);
+        py += (rand() % 6 - 3);
+      }
+
+      // Panel Body (Metallic look)
+      iSetColor(50, 50, 65);
+      iFilledRectangle(px, py, labPanels[i].w, labPanels[i].h);
+
+      // Top Highlight
+      iSetColor(120, 120, 150);
+      iLine(px, py + labPanels[i].h, px + labPanels[i].w, py + labPanels[i].h);
+
+      iSetColor(20, 20, 30);
+      iRectangle(px, py, labPanels[i].w, labPanels[i].h);
+
+      if (labPanels[i].isWarning) {
+        // Ceiling Crack Visual
+        iSetColor(150, 150, 150);
+        iLine(px - 10, labCeilingY, px + 5, labCeilingY - 10);
+        iLine(px + 5, labCeilingY - 10, px + 20, labCeilingY);
+        iLine(px + 30, labCeilingY, px + 50, labCeilingY - 15);
+
+        // Warning Icon
+        iSetColor(255, 100, 0);
+        iText(px + labPanels[i].w / 2 - 5, py + labPanels[i].h / 2 - 5, "!",
+              GLUT_BITMAP_HELVETICA_18);
+      }
+    }
+  }
+
+  // === PLAYER ===
+  glPushMatrix();
+  glTranslatef(labPlayerX, labPlayerY, 0);
+  if (!labPlayerFacingRight)
+    glScalef(-1, 1, 1);
+  if (labOnCeiling)
+    glScalef(1, -1, 1);
+
+  // Restore player appearance
+  int fw = 64, fh = 64;
+  int frameIdx = 2; // Standard right-facing frame
+  int sx = frameIdx * fw;
+  int sy = 0;
+  iShowSubImage(-30, -30, 60, 60, playerSpritesheet, sx, sy, fw, fh, 256, 64);
+  glPopMatrix();
+
+  // Damage flash
+  if (labDamageFlash > 0) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.0f, 0.0f, 0.0f, (float)labDamageFlash * 0.4f);
+    iFilledRectangle(camX, 0, 1024, 640);
+    glDisable(GL_BLEND);
+  }
+
+  glPopMatrix();
+
+  // === HUD ===
+  iSetColor(100, 100, 100);
+  iRectangle(20, 600, 200, 15); // Border
+
+  if (labPlayerHealth > 100) {
+    iSetColor(0, 200, 255); // Cyan for Hull Integrity
+    iFilledRectangle(20, 600, (int)(200 * labPlayerHealth / 150.0), 15);
+  } else {
+    iSetColor(0, 255, 100); // Green for standard health
+    iFilledRectangle(20, 600, (int)(200 * labPlayerHealth / 100.0), 15);
+  }
+  iSetColor(255, 255, 255);
+  iText(20, 620, "HULL INTEGRITY", GLUT_BITMAP_HELVETICA_12);
+
+  // Dash Indicator
+  iSetColor(150, 150, 150);
+  iRectangle(20, 580, 100, 8);
+  if (labDashCooldown <= 0) {
+    iSetColor(255, 255, 0); // Yellow for Ready
+    iFilledRectangle(20, 580, 100, 8);
+    iText(130, 580, "DASH READY [X]", GLUT_BITMAP_HELVETICA_10);
+  } else {
+    iSetColor(100, 50, 0); // Dull orange for charging
+    iFilledRectangle(20, 580, (int)(100 * (1.0 - labDashCooldown / 3.0)), 8);
+    iText(130, 580, "CHARGING...", GLUT_BITMAP_HELVETICA_10);
+  }
+
+  iSetColor(0, 150, 255);
+  iText(800, 620, "MECCA LABS - SECTOR 7", GLUT_BITMAP_HELVETICA_12);
+
+  double progress = labPlayerX / labCorridorLength;
+  iSetColor(50, 50, 50);
+  iFilledRectangle(300, 600, 400, 10);
+  iSetColor(0, 200, 255);
+  iFilledRectangle(300, 600, (int)(400 * progress), 10);
+
+  // Instructions overlay
+  drawLabInstructions();
+}
+
+void updateLabLevel() {
+  if (labInstructionTimer > 0)
+    labInstructionTimer -= 0.016;
+
+  // === SURVIVAL MECHANICS UPDATE ===
+  if (labDashTimer > 0)
+    labDashTimer -= 0.016;
+  if (labDashCooldown > 0)
+    labDashCooldown -= 0.016;
+
+  // Base speed + Dash multiplier
+  double currentSpeed = (labDashTimer > 0) ? 12.0 : 4.5;
+  // === SPEED ZONE LOGIC ===
+  for (int i = 0; i < LAB_NUM_SPEED; i++) {
+    if (labPlayerX >= labSpeedZones[i].startX &&
+        labPlayerX <= labSpeedZones[i].endX) {
+      currentSpeed *= labSpeedZones[i].multiplier;
+      break;
+    }
+  }
+
+  // Player movement
+  if (keyPressed['d'] || keyPressed['D']) {
+    labPlayerX += currentSpeed;
+    labPlayerFacingRight = true;
+  }
+  if (keyPressed['a'] || keyPressed['A']) {
+    labPlayerX -= currentSpeed;
+    labPlayerFacingRight = false;
+  }
+
+  // Clamp player position
+  if (labPlayerX < 30)
+    labPlayerX = 30;
+  if (labPlayerX > labCorridorLength - 30)
+    labPlayerX = labCorridorLength - 30;
+
+  // Check if player is in an anti-gravity zone
+  bool inAGZone = false;
+  for (int i = 0; i < LAB_NUM_AGZONES; i++) {
+    if (labPlayerX >= labAGZones[i].startX &&
+        labPlayerX <= labAGZones[i].endX) {
+      inAGZone = true;
+      break;
+    }
+  }
+
+  // Auto-switch gravity when entering/leaving AG zones
+  if (inAGZone && !labOnCeiling &&
+      (keyPressed['w'] || keyPressed['W'] || keyPressed[' '])) {
+    if (!labIsJumping) {
+      labOnCeiling = true;
+      labPlayerVY = 8;
+      labIsJumping = true;
+    }
+  }
+  if (!inAGZone && labOnCeiling) {
+    labOnCeiling = false;
+    labPlayerVY = 0;
+  }
+
+  // Gravity and jumping
+  if (labOnCeiling) {
+    labPlayerVY += 0.6;
+    labPlayerY += labPlayerVY;
+    if (labPlayerY >= labCeilingY - 25) {
+      labPlayerY = labCeilingY - 25;
+      labPlayerVY = 0;
+      labIsJumping = false;
+    }
+    if (labPlayerY <= labFloorY + 25) {
+      labPlayerY = labFloorY + 25;
+      labPlayerVY = 0;
+      labOnCeiling = false;
+      labIsJumping = false;
+    }
+    if ((keyPressed['s'] || keyPressed['S'] || keyPressed[' ']) &&
+        !labIsJumping) {
+      labPlayerVY = -10;
+      labIsJumping = true;
+    }
+  } else {
+    labPlayerVY -= 0.6;
+    labPlayerY += labPlayerVY;
+    if (labPlayerY <= labFloorY + 25) {
+      labPlayerY = labFloorY + 25;
+      labPlayerVY = 0;
+      labIsJumping = false;
+    }
+    if (labPlayerY >= labCeilingY - 25) {
+      labPlayerY = labCeilingY - 25;
+      labPlayerVY = 0;
+      if (inAGZone) {
+        labOnCeiling = true;
+        labIsJumping = false;
+      }
+    }
+    if ((keyPressed['w'] || keyPressed['W'] || keyPressed[' ']) &&
+        !labIsJumping) {
+      labPlayerVY = 12;
+      labIsJumping = true;
+    }
+  }
+
+  // Damage flash decay
+  if (labDamageFlash > 0)
+    labDamageFlash -= 0.05;
+
+  // Over-health Decay (Hull integrity slowly stabilizes to 100)
+  if (labPlayerHealth > LAB_MAX_HEALTH && labDashTimer <= 0) {
+    labPlayerHealth -= 0.005; // Very slow decay
+  }
+
+  // === GLOBAL SAFETY CHECK ===
+  bool isSafe = false;
+  for (int z = 0; z < LAB_NUM_AGZONES; z++) {
+    if (labPlayerX > labAGZones[z].startX && labPlayerX < labAGZones[z].endX) {
+      isSafe = true;
+      break;
+    }
+  }
+
+  // === HEALING ZONE LOGIC (Green Zones) ===
+  bool underAttack = (labDamageFlash > 0);
+
+  // Check Laser Intersection
+  for (int i = 0; i < LAB_NUM_TURRETS; i++) {
+    if (labTurrets[i].beamActive) {
+      if (labTurrets[i].direction == 2) { // Down-firing
+        if (fabs(labPlayerX - labTurrets[i].x) < 40)
+          underAttack = true;
+      } else { // Horizontal
+        if (fabs(labPlayerY - labTurrets[i].y) < 40)
+          underAttack = true;
+      }
+    }
+  }
+
+  // Check Falling Panels Intersection
+  for (int i = 0; i < LAB_NUM_PANELS; i++) {
+    if (labPanels[i].triggered && !labPanels[i].fallen) {
+      if (fabs(labPlayerX - (labPanels[i].x + labPanels[i].w / 2)) <
+              (labPanels[i].w / 2 + 20) &&
+          fabs(labPlayerY - labPanels[i].y) < 60) {
+        underAttack = true;
+      }
+    }
+  }
+
+  // Check Electric Floors Intersection
+  for (int i = 0; i < LAB_NUM_ELECTRIC; i++) {
+    if (labElectricFloors[i].isActive && !labOnCeiling && !labIsJumping) {
+      if (labPlayerX > labElectricFloors[i].x &&
+          labPlayerX < labElectricFloors[i].x + labElectricFloors[i].w) {
+        underAttack = true;
+      }
+    }
+  }
+
+  for (int i = 0; i < LAB_NUM_HEALING; i++) {
+    if (labPlayerX > labHealingZones[i].startX &&
+        labPlayerX < labHealingZones[i].endX) {
+      // Heal only if fully inside and NOT under attack
+      if (labPlayerHealth < LAB_MAX_HULL && !underAttack) {
+        labPlayerHealth += 0.25; // Gradual constant rate (~15 HP/sec)
+        if (labPlayerHealth > LAB_MAX_HULL)
+          labPlayerHealth = LAB_MAX_HULL;
+      }
+    }
+  }
+
+  // === ELECTRIC FLOOR LOGIC ===
+  for (int i = 0; i < LAB_NUM_ELECTRIC; i++) {
+    labElectricFloors[i].timer -= 0.016;
+    if (labElectricFloors[i].timer <= 0) {
+      labElectricFloors[i].isActive = !labElectricFloors[i].isActive;
+      // Burst patterns: 1.2s ON, 1.8s OFF
+      labElectricFloors[i].timer = labElectricFloors[i].isActive ? 1.2 : 1.8;
+    }
+
+    // Static collision (damage if on floor and active)
+    if (labElectricFloors[i].isActive && !labOnCeiling && !labIsJumping &&
+        !isSafe) {
+      if (labPlayerX > labElectricFloors[i].x &&
+          labPlayerX < labElectricFloors[i].x + labElectricFloors[i].w) {
+        labPlayerHealth -= 1;
+        labDamageFlash = 0.5;
+      }
+    }
+  }
+
+  // === AMBIENT PARTICLES UPDATE ===
+  for (int i = 0; i < LAB_NUM_PARTICLES; i++) {
+    if (labParticles[i].life <= 0) {
+      labParticles[i].x = labPlayerX + (rand() % 1200 - 400);
+      labParticles[i].y = labFloorY + (rand() % (int)(labCeilingY - labFloorY));
+      labParticles[i].vx = (rand() % 100 - 50) / 400.0;
+      labParticles[i].vy = (rand() % 100 - 50) / 400.0;
+      labParticles[i].size = 1 + rand() % 2;
+      labParticles[i].alpha = 0.1 + (rand() % 30) / 100.0;
+      labParticles[i].life = 2.0 + (rand() % 300) / 100.0;
+    } else {
+      labParticles[i].x += labParticles[i].vx;
+      labParticles[i].y += labParticles[i].vy;
+      labParticles[i].life -= 0.016;
+      labParticles[i].alpha -= 0.0005;
+    }
+  }
+
+  // === TURRET LOGIC ===
+  for (int i = 0; i < LAB_NUM_TURRETS; i++) {
+    // 1. SWEEP MOVEMENT
+    if (labTurrets[i].sweepRange > 0) {
+      labTurrets[i].sweepTime += 0.016 * labTurrets[i].sweepSpeed;
+      double offset = sin(labTurrets[i].sweepTime) * labTurrets[i].sweepRange;
+      if (labTurrets[i].direction == 2) { // Down-firing
+        labTurrets[i].x = labTurrets[i].baseX + offset;
+      } else { // Horizontal
+        labTurrets[i].y = labTurrets[i].baseY + offset;
+      }
+    }
+
+    // 2. FIRE PATTERNS & BEAM STATE
+    if (labTurrets[i].beamActive) {
+      labTurrets[i].beamTimer -= 0.016;
+      if (labTurrets[i].beamTimer <= 0) {
+        labTurrets[i].beamActive = false;
+        labTurrets[i].fireTimer = labTurrets[i].fireInterval;
+
+        // Handle Pattern Progression
+        if (labTurrets[i].patternType == 2) { // Burst
+          labTurrets[i].burstCount++;
+          if (labTurrets[i].burstCount < 3)
+            labTurrets[i].fireTimer = 0.2; // Rapid burst
+          else
+            labTurrets[i].burstCount = 0;
+        } else if (labTurrets[i].patternType == 1) { // Double
+          labTurrets[i].burstCount++;
+          if (labTurrets[i].burstCount < 2)
+            labTurrets[i].fireTimer = 0.4;
+          else
+            labTurrets[i].burstCount = 0;
+        }
+      }
+
+      // Laser collision logic (shared)
+      double tx = labTurrets[i].x, ty = labTurrets[i].y;
+      bool hit = false;
+      if (labTurrets[i].direction == 0 && labPlayerX > tx + 33 &&
+          fabs(labPlayerY - ty) < 20)
+        hit = true;
+      else if (labTurrets[i].direction == 1 && labPlayerX < tx - 33 &&
+               fabs(labPlayerY - ty) < 20)
+        hit = true;
+      else if (labTurrets[i].direction == 2 && fabs(labPlayerX - tx) < 25 &&
+               labPlayerY < ty && labPlayerY > labFloorY - 50)
+        hit = true;
+
+      if (hit) {
+        labPlayerHealth -= 1;
+        labDamageFlash = 1.0;
+      }
+    } else {
+      labTurrets[i].fireTimer -= 0.016;
+      // Warning stage
+      if (labTurrets[i].fireTimer < 0.6)
+        labTurrets[i].isWarning = true;
+      else
+        labTurrets[i].isWarning = false;
+
+      if (labTurrets[i].fireTimer <= 0) {
+        labTurrets[i].beamActive = true;
+        labTurrets[i].beamTimer = 1.0; // Slightly longer beam for learnability
+        labTurrets[i].isWarning = false;
+      }
+    }
+  }
+
+  // === FALLING PANEL LOGIC ===
+  for (int i = 0; i < LAB_NUM_PANELS; i++) {
+    if (!labPanels[i].triggered && !labPanels[i].fallen) {
+      // Detect player at fair distance
+      if (fabs(labPlayerX - (labPanels[i].x + labPanels[i].w / 2)) < 250) {
+        labPanels[i].triggered = true;
+        labPanels[i].warningTimer = 1.8; // Long shake warning
+      }
+    }
+    if (labPanels[i].triggered && !labPanels[i].fallen) {
+      if (labPanels[i].warningTimer > 0) {
+        labPanels[i].warningTimer -= 0.016;
+        labPanels[i].isWarning = true;
+      } else {
+        labPanels[i].isWarning = false;
+        double fallAccel = (labPanels[i].sizeType == 0) ? 0.6 : 0.3;
+        labPanels[i].fallSpeed += fallAccel;
+        labPanels[i].y -= labPanels[i].fallSpeed;
+      }
+
+      bool panelHit = (labPanels[i].y < labPlayerY + 25 &&
+                       labPanels[i].y + labPanels[i].h > labPlayerY - 25 &&
+                       labPlayerX > labPanels[i].x - 25 &&
+                       labPlayerX < labPanels[i].x + labPanels[i].w + 25);
+
+      if (panelHit) {
+        labPlayerHealth -= (labPanels[i].sizeType == 1 ? 30 : 15);
+        labDamageFlash = 1.0;
+        labPanels[i].fallen = true;
+      }
+      if (labPanels[i].y <= labFloorY)
+        labPanels[i].fallen = true;
+    }
+  }
+
+  // Check player death
+  if (labPlayerHealth <= 0) {
+    labPlayerHealth = 0;
+    gameState = MENU;
+  }
+
+  // Check level completion (Reached the Core)
+  if (labPlayerX >= labCorridorLength - 50) {
+    gameState = PUZZLE_TRANSITION;
+    puzzleTransitionPhase = 0;
+    puzzleTransitionTimer = 3.0; // Stay on black screen for 3 seconds
+  }
+}
+
 // Forward declarations
+void drawPuzzleTransition();
 void drawSurpriseScreen();
 void drawPuzzle();
 void drawGravityNode(int x, int y, int size, GravityTile t);
-
-// ============================================================
-// DRAW NEW SIDE-SCROLLING LEVEL
-// ============================================================
-void drawNewLevel() {
-  // --- Draw scrolling backgrounds ---
-  // Each BG is 1024px wide. Total loop = 3072px.
-  // We need to figure out which BG panels are visible and where to draw them.
-  double offset = scrollX;
-  // Normalize offset into [0, TOTAL_SCROLL_WIDTH)
-  offset = offset - (int)(offset / TOTAL_SCROLL_WIDTH) * TOTAL_SCROLL_WIDTH;
-  if (offset < 0) offset += TOTAL_SCROLL_WIDTH;
-
-  // We may need to draw up to 2 panels to fill the 1024px screen
-  for (int i = -1; i <= 1; i++) {
-    // Calculate the world-x of panel start
-    // Panel index in the sequence
-    double panelWorldX = 0;
-    int panelIdx = 0;
-
-    // For each potential visible panel position
-    double checkX = (int)(offset / BG_WIDTH) * BG_WIDTH + i * BG_WIDTH;
-    double screenX = checkX - offset;
-
-    // Only draw if it overlaps the screen [0, 1024)
-    if (screenX + BG_WIDTH > 0 && screenX < 1024) {
-      // Which BG image?
-      double worldX = checkX;
-      // Normalize worldX to [0, TOTAL_SCROLL_WIDTH)
-      worldX = worldX - (int)(worldX / TOTAL_SCROLL_WIDTH) * TOTAL_SCROLL_WIDTH;
-      if (worldX < 0) worldX += TOTAL_SCROLL_WIDTH;
-      panelIdx = (int)(worldX / BG_WIDTH);
-      if (panelIdx < 0) panelIdx = 0;
-      if (panelIdx > 2) panelIdx = 2;
-
-      iShowImage((int)screenX, 0, BG_WIDTH, 640, newLevelBG[panelIdx]);
-    }
-  }
-
-  // --- Draw player character (using PC2.png) ---
-  int fw = 63, fh = 61;       // approx frame size for 1011x247 grid (16 cols, 4 rows)
-  int totalW = 1011, totalH = 247;
-
-  // PC2.png layout:
-  // Row 0 (top): Idle/Forward
-  // Row 1: Walk Right cycle (16 frames)
-  // Row 2: Walk Left cycle (16 frames)
-  // Row 3 (bottom): Shooting/Action
-
-  // PC2.png only has the walk cycle facing right on Row 2 (index 2).
-  // For facing left, we use the same row but flip the texture horizontally.
-  int frameX;
-  int frameY = 2; // Always use Row 2 (walk right) by default
-  bool flipX = false;
-
-  if (newPlayerDir == 1) { // Facing Right
-    flipX = false;
-    if (newPlayerIsShooting) {
-      frameY = 2; // Stay on the side-facing row
-      frameX = 1; // Use a distinct action frame instead of idle (0) or late cycle (8)
-    } else if (newPlayerMoving) {
-      frameX = newPlayerFrame % 8; // Cycle frames
-    } else {
-      frameX = 0; // Idle frame
-    }
-  } else { // Facing Left
-    flipX = true;
-    if (newPlayerIsShooting) {
-      frameY = 2; // Flipped row for left
-      frameX = 1; 
-    } else if (newPlayerMoving) {
-      frameX = newPlayerFrame % 8; // Cycle frames
-    } else {
-      frameX = 0; // Idle frame
-    }
-  }
-
-  int sx = frameX * fw;
-  int sy = frameY * fh;
-  int x = (int)newPlayerX - 40;
-  int y = (int)newPlayerY - 40;
-  int width = 80;
-  int height = 80;
-
-  glEnable(GL_TEXTURE_2D);
-  glBindTexture(GL_TEXTURE_2D, newPlayerSpritesheet);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-  glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-  glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-
-  double tx1 = (double)sx / totalW;
-  double tx2 = (double)(sx + fw) / totalW;
-  double ty1 = -(double)sy / totalH;
-  double ty2 = -(double)(sy + fh) / totalH;
-
-  glBegin(GL_QUADS);
-  if (flipX) {
-    // Flipped horizontally
-    glTexCoord2f(tx2, ty1); glVertex2f(x, y);
-    glTexCoord2f(tx1, ty1); glVertex2f(x + width, y);
-    glTexCoord2f(tx1, ty2); glVertex2f(x + width, y + height);
-    glTexCoord2f(tx2, ty2); glVertex2f(x, y + height);
-  } else {
-    // Normal
-    glTexCoord2f(tx1, ty1); glVertex2f(x, y);
-    glTexCoord2f(tx2, ty1); glVertex2f(x + width, y);
-    glTexCoord2f(tx2, ty2); glVertex2f(x + width, y + height);
-    glTexCoord2f(tx1, ty2); glVertex2f(x, y + height);
-  }
-  glEnd();
-  glDisable(GL_TEXTURE_2D);
-
-  // --- Draw Enemies ---
-  // All enemies use NPC.png: 4 frames x 1 row (256x64)
-  // Frame 0: back, Frame 1: side-right, Frame 2: front/gun, Frame 3: side-right walk
-  // Use a fixed side-facing frame to avoid rotation effect
-  for (int i = 0; i < MAX_NEW_ENEMIES; i++) {
-    if (newEnemies[i].active) {
-      int eFrameX;
-      bool eFlipX = false;
-
-      // NPC.png frame 1 faces LEFT, frame 2 faces RIGHT
-      if (newEnemies[i].dir == -1) { // Enemy facing left (toward player on left)
-        if (newEnemies[i].isShooting) {
-          eFrameX = 2; // Shooting frame faces right, flip it
-          eFlipX = true;
-        } else {
-          eFrameX = 1; // Walk frame already faces left, no flip
-          eFlipX = false;
-        }
-      } else { // Enemy facing right (toward player on right)
-        if (newEnemies[i].isShooting) {
-          eFrameX = 2; // Shooting frame already faces right, no flip
-          eFlipX = false;
-        } else {
-          eFrameX = 1; // Walk frame faces left, flip it
-          eFlipX = true;
-        }
-      }
-
-      int eTotalW = 256, eTotalH = 64;
-      int eFw = 64, eFh = 64;
-
-      int esx = eFrameX * eFw;
-      int esy = 0;
-      // Enemy is positioned based on scrollX
-      int ex = (int)newEnemies[i].x - (int)scrollX - 40;
-      int ey = (int)newEnemies[i].y - 40;
-      // Fixed size to match player: 80x80
-      int eWidth = 80;
-      int eHeight = 80;
-      
-      // Only draw if roughly on-screen
-      if (ex > -100 && ex < (int)1124) {
-        glEnable(GL_TEXTURE_2D);
-        glBindTexture(GL_TEXTURE_2D, npc1Spritesheet); // All enemies use NPC.png
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
-
-        double etx1 = (double)esx / eTotalW;
-        double etx2 = (double)(esx + eFw) / eTotalW;
-        double ety1 = -(double)esy / eTotalH;
-        double ety2 = -(double)(esy + eFh) / eTotalH;
-
-        glBegin(GL_QUADS);
-        if (eFlipX) {
-          glTexCoord2f(etx2, ety1); glVertex2f(ex, ey);
-          glTexCoord2f(etx1, ety1); glVertex2f(ex + eWidth, ey);
-          glTexCoord2f(etx1, ety2); glVertex2f(ex + eWidth, ey + eHeight);
-          glTexCoord2f(etx2, ety2); glVertex2f(ex, ey + eHeight);
-        } else {
-          glTexCoord2f(etx1, ety1); glVertex2f(ex, ey);
-          glTexCoord2f(etx2, ety1); glVertex2f(ex + eWidth, ey);
-          glTexCoord2f(etx2, ety2); glVertex2f(ex + eWidth, ey + eHeight);
-          glTexCoord2f(etx1, ety2); glVertex2f(ex, ey + eHeight);
-        }
-        glEnd();
-        glDisable(GL_TEXTURE_2D);
-
-        // Enemy Health Bar
-        iSetColor(100, 100, 100);
-        iRectangle(ex + 15, ey + 80, 50, 5);
-        iSetColor(220, 20, 20);
-        double eHpPercent = (double)newEnemies[i].health / 200.0;
-        if (eHpPercent < 0) eHpPercent = 0;
-        iFilledRectangle(ex + 16, ey + 81, 48 * eHpPercent, 3);
-      }
-    }
-  }
-
-  // --- Draw Bullets ---
-  for (int i = 0; i < MAX_NEW_BULLETS; i++) {
-    if (newBullets[i].active) {
-      if (newBullets[i].isPlayerBullet) {
-        iSetColor(255, 200, 0); // Yellow-orange laser for player
-      } else {
-        iSetColor(255, 50, 50); // Red laser for enemies
-      }
-      
-      // Calculate bullet screen position based on scrollX
-      int bx = (int)newBullets[i].x - (int)scrollX;
-      int by = (int)newBullets[i].y;
-      
-      iFilledRectangle(bx, by, 15, 4); // Thin laser line
-    }
-  }
-
-  // --- Draw UI (Health Bar) ---
-  int hpBarWidth = 200;
-  int hpBarHeight = 20;
-  int hpX = 20;
-  int hpY = 640 - 40;
-  
-  // Grey background limit
-  iSetColor(100, 100, 100);
-  iRectangle(hpX, hpY, hpBarWidth, hpBarHeight);
-  
-  // Red current health
-  iSetColor(220, 20, 20);
-  double healthPercent = (double)newPlayerHealth / newPlayerMaxHealth;
-  if (healthPercent < 0) healthPercent = 0;
-  iFilledRectangle(hpX + 1, hpY + 1, (hpBarWidth - 2) * healthPercent, hpBarHeight - 2);
-
-  char hpText[32];
-  sprintf_s(hpText, "PLAYER HP: %d / %d", newPlayerHealth, newPlayerMaxHealth);
-  iSetColor(255, 255, 255);
-  iText(hpX + 5, hpY + 5, hpText, GLUT_BITMAP_HELVETICA_12);
-}
 
 void iDraw() {
   iClear();
 
   if (gameState == MENU) {
     drawMenu();
-  } else if (gameState == NEW_LEVEL) {
-    drawNewLevel();
-  } else if (gameState == GAME_OVER) {
-    // Game Over Screen
-    iSetColor(0, 0, 0);
-    iFilledRectangle(0, 0, 1024, 640);
-    iSetColor(180, 0, 0);
-    iText(380, 380, "GAME OVER", GLUT_BITMAP_TIMES_ROMAN_24);
-    iSetColor(160, 160, 160);
-    iText(350, 300, "CLICK ANYWHERE TO RETURN TO MENU", GLUT_BITMAP_HELVETICA_18);
+  } else if (gameState == LEVEL1) {
+    drawLevel1();
   } else if (gameState == CREDITS_STATE) {
     drawCredits();
   } else if (gameState == OPTIONS_STATE) {
     drawOptions();
-  }
-
-  else if (gameState == LEVEL1) {
-    drawLevel1();
   } else if (gameState == WIN_SCREEN) {
     drawWinScreen();
   } else if (gameState == FINAL_BG) {
@@ -1473,8 +2289,81 @@ void iDraw() {
     drawPhase3Player();
     drawPhase3Boss();
     drawPhase3HUD();
+  } else if (gameState == BOSS_DEAD_IMAGE) {
+    drawBossDeadImage();
+  } else if (gameState == LAB_TRANSITION) {
+    drawLabTransition();
+  } else if (gameState == LAB_LEVEL) {
+    drawLabLevel();
+  } else if (gameState == PUZZLE_TRANSITION) {
+    drawPuzzleTransition();
+  }
+}
+
+void drawPuzzleTransition() {
+  // Cinematic transition using 2nd bg.png
+  iSetColor(0, 0, 0);
+  iFilledRectangle(0, 0, 1024, 640);
+
+  if (puzzleTransitionPhase >= 1) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.0f, 1.0f, 1.0f, (float)puzzleTransitionAlpha);
+    iShowImage(0, 0, 1024, 640, puzzleTransitionBG);
+    glDisable(GL_BLEND);
   }
 
+  // Draw message
+  if (puzzleTransitionPhase == 0) {
+    // Neon blue Level Cleared text (no jumping)
+    static double clearPulse = 0;
+    clearPulse += 0.05;
+    int pulseIntensity = (int)(180 + 75 * sin(clearPulse));
+
+    // Broader neon blue lines (frames)
+    iSetColor(0, pulseIntensity, pulseIntensity);
+    iFilledRectangle(250, 360, 524, 4); // Top broad line
+    iFilledRectangle(250, 280, 524, 4); // Bottom broad line
+
+    // Neon blue text
+    iSetColor(80, 230, 255);
+    iText(420, 315, "LEVEL CLEARED", GLUT_BITMAP_TIMES_ROMAN_24);
+  } else if (puzzleTransitionPhase == 1) {
+    // Mission Objective: Neon Amber/Cyan Glow
+    static double objectivePulse = 0;
+    objectivePulse += 0.05;
+    double pulseAlpha = 0.5 + 0.5 * sin(objectivePulse);
+
+    // Mission Frame (Neon Cyan/White)
+    iSetColor(0, 200, 255);
+    iRectangle(280, 290, 464, 60); // Main frame
+    int val = (int)(150 + 105 * pulseAlpha);
+    iSetColor(0, val, val);
+    iRectangle(275, 285, 474, 70); // Outlier glow rectangle
+
+    // Mission Header
+    iSetColor(255, 255, 255);
+    iText(290, 332, "MISSION OBJECTIVE:", GLUT_BITMAP_HELVETICA_10);
+
+    // Glowing Objective Text
+    iSetColor(255, 220, 0); // Amber/Gold for primary goal
+    iText(340, 310, "STABILIZE THE GRAVITY CORE", GLUT_BITMAP_TIMES_ROMAN_24);
+
+    // Sub-text or Scanline effect
+    if (rand() % 10 < 2) { // Random flicker
+      iSetColor(255, 255, 255);
+      iLine(280, 320, 744, 320);
+    }
+  }
+
+  // Final fade to black overlay if in Phase 2
+  if (puzzleTransitionPhase == 2) {
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(0.0f, 0.0f, 0.0f, (float)(1.0 - puzzleTransitionAlpha));
+    iFilledRectangle(0, 0, 1024, 640);
+    glDisable(GL_BLEND);
+  }
 }
 
 void drawSurpriseScreen() {
@@ -1492,66 +2381,219 @@ void drawSurpriseScreen() {
 }
 
 void drawGravityNode(int x, int y, int size, GravityTile t) {
-  iSetColor(50, 50, 50);
+  // Holographic Frame
+  iSetColor(0, 80, 100);
   iRectangle(x, y, size, size);
-
-  if (t.isActive)
-    iSetColor(0, 255, 255); // Glowing blue
-  else
-    iSetColor(100, 100, 100);
+  iSetColor(0, 40, 60);
+  iRectangle(x + 2, y + 2, size - 4, size - 4);
 
   int mid = size / 2;
-  int thick = 10;
+  int conduitThick = 12;
 
-  // Rotate logic within drawing
-  // Straight: Left-Right (default rot 0)
-  // L-Shape: Bottom-Right (default rot 0)
-  // Cross: All (rot irrelevent)
+  auto drawConduit = [&](int x1, int y1, int w, int h, bool vertical) {
+    // Base Tube (Dark)
+    iSetColor(20, 30, 40);
+    iFilledRectangle(x1, y1, w, h);
+
+    // Cyan Glow
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    if (t.isActive)
+      glColor4f(0.0f, 0.8f, 1.0f, 0.4f);
+    else
+      glColor4f(0.3f, 0.4f, 0.5f, 0.2f);
+
+    if (vertical)
+      iFilledRectangle(x1 + 2, y1, w - 4, h);
+    else
+      iFilledRectangle(x1, y1 + 2, w, h - 4);
+
+    // Inner Core (White/Bright)
+    if (t.isActive)
+      iSetColor(200, 240, 255);
+    else
+      iSetColor(100, 110, 120);
+
+    // Bloom effect
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glColor4f(1.0f, 0.4f, 0.4f, 0.4f);
+    // This part of the code edit seems misplaced. It refers to
+    // `labTurrets[i].direction`, `tx`, `ty`, `labFloorY` which are not defined
+    // in `drawGravityNode`. Assuming it was meant to be added elsewhere. For
+    // now, commenting it out to avoid compilation errors. if
+    // (labTurrets[i].direction == 2)
+    //   iFilledRectangle(tx - 6, labFloorY, 12, ty - labFloorY - 15);
+    glDisable(GL_BLEND);
+    if (vertical)
+      iFilledRectangle(x1 + 5, y1, 2, h);
+    else
+      iFilledRectangle(x1, y1 + 5, w, 2);
+
+    // Energy Pulse (Animating)
+    if (t.isActive) {
+      iSetColor(255, 220, 100);
+      double pSize = 15;
+      if (vertical) {
+        double py = y1 + (h - pSize) * puzzleEnergyTimer;
+        iFilledRectangle(x1 + 2, py, w - 4, pSize);
+      } else {
+        double px = x1 + (w - pSize) * puzzleEnergyTimer;
+        iFilledRectangle(px, y1 + 2, pSize, h - 4);
+      }
+    }
+    glDisable(GL_BLEND);
+  };
 
   if (t.type == 0) { // Straight
     if (t.rotation % 2 == 0)
-      iFilledRectangle(x, y + mid - 5, size, 10); // Horz
+      drawConduit(x, y + mid - 6, size, 12, false); // Horz
     else
-      iFilledRectangle(x + mid - 5, y, 10, size); // Vert
-  } else if (t.type == 1) {                       // L-Shape
-    // Simplified: draw based on rot
-    if (t.rotation == 0) { // Right-Top
-      iFilledRectangle(x + mid - 5, y + mid - 5, mid + 5, 10);
-      iFilledRectangle(x + mid - 5, y + mid - 5, 10, mid + 5);
+      drawConduit(x + mid - 6, y, 12, size, true); // Vert
+  } else if (t.type == 1) {                        // L-Shape
+    if (t.rotation == 0) {                         // Right-Top
+      drawConduit(x + mid - 6, y + mid - 6, mid + 6, 12, false);
+      drawConduit(x + mid - 6, y + mid - 6, 12, mid + 6, true);
     } else if (t.rotation == 1) { // Right-Bottom
-      iFilledRectangle(x + mid - 5, y + mid - 5, mid + 5, 10);
-      iFilledRectangle(x + mid - 5, y, 10, mid + 5);
+      drawConduit(x + mid - 6, y + mid - 6, mid + 6, 12, false);
+      drawConduit(x + mid - 6, y, 12, mid + 6, true);
     } else if (t.rotation == 2) { // Left-Bottom
-      iFilledRectangle(x, y + mid - 5, mid + 5, 10);
-      iFilledRectangle(x + mid - 5, y, 10, mid + 5);
+      drawConduit(x, y + mid - 6, mid + 6, 12, false);
+      drawConduit(x + mid - 6, y, 12, mid + 6, true);
     } else if (t.rotation == 3) { // Left-Top
-      iFilledRectangle(x, y + mid - 5, mid + 5, 10);
-      iFilledRectangle(x + mid - 5, y + mid - 5, 10, mid + 5);
+      drawConduit(x, y + mid - 6, mid + 6, 12, false);
+      drawConduit(x + mid - 6, y + mid - 6, 12, mid + 6, true);
     }
   } else if (t.type == 2) { // Cross
-    iFilledRectangle(x, y + mid - 5, size, 10);
-    iFilledRectangle(x + mid - 5, y, 10, size);
+    drawConduit(x, y + mid - 6, size, 12, false);
+    drawConduit(x + mid - 6, y, 12, size, true);
+  } else if (t.type == 3) { // T-Junction
+    if (t.rotation == 0) {  // LTR (3,1,0)
+      drawConduit(x, y + mid - 6, size, 12, false);
+      drawConduit(x + mid - 6, y + mid - 6, 12, mid + 6, true);
+    } else if (t.rotation == 1) { // TRB (0,1,2)
+      drawConduit(x + mid - 6, y, 12, size, true);
+      drawConduit(x + mid - 6, y + mid - 6, mid + 6, 12, false);
+    } else if (t.rotation == 2) { // RBL (1,2,3)
+      drawConduit(x, y + mid - 6, size, 12, false);
+      drawConduit(x + mid - 6, y, 12, mid + 6, true);
+    } else if (t.rotation == 3) { // BLT (2,3,0)
+      drawConduit(x + mid - 6, y, 12, size, true);
+      drawConduit(x, y + mid - 6, mid + 6, 12, false);
+    }
   }
 }
 
 void drawPuzzle() {
-  iShowImage(0, 0, 1024, 640, finalBG); // Use level background for atmosphere
+  // 1. Deep Blue Gradient Background
+  for (int i = 0; i < 640; i++) {
+    int r = 5 * (640 - i) / 640;
+    int g = 10 * (640 - i) / 640;
+    int b = 30 * (640 - i) / 640;
+    iSetColor(r, g, b);
+    iLine(0, i, 1024, i);
+  }
 
-  // Screen Shake if any
-  double dx = (rand() % 10 - 5) * screenShake;
-  double dy = (rand() % 10 - 5) * screenShake;
+  // 2. Holographic Grid Layer
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glColor4f(0.0f, 0.5f, 0.8f, 0.15f);
+  for (int i = 0; i < 1024; i += 40)
+    iLine(i, 0, i, 640);
+  for (int i = 0; i < 640; i += 40)
+    iLine(0, i, 1024, i);
 
-  // UI
+  // 3. Environmental Side Panels (Monitors)
+  iSetColor(10, 20, 30);
+  iFilledRectangle(20, 100, 250, 440);  // Left Panel
+  iFilledRectangle(754, 100, 250, 440); // Right Panel
+
+  iSetColor(0, 100, 150);
+  iRectangle(25, 105, 240, 430);
+  iRectangle(759, 105, 240, 430);
+
+  iSetColor(0, 200, 255);
+  iText(35, 510, "GRAVITY CORE STATUS", GLUT_BITMAP_HELVETICA_12);
+  iText(35, 490, "INSTABILITY: 87.4%", GLUT_BITMAP_HELVETICA_10);
+  iText(770, 510, "DIAGNOSTIC FEED", GLUT_BITMAP_HELVETICA_12);
+  iText(770, 490, "0xAF32 0100 1101", GLUT_BITMAP_HELVETICA_10);
+
+  // 4. Floating Particles
+  for (int i = 0; i < 40; i++) {
+    glColor4f(0.6f, 0.9f, 1.0f, (float)puzzleParticles[i].alpha);
+    iFilledCircle(puzzleParticles[i].x, puzzleParticles[i].y,
+                  puzzleParticles[i].size);
+  }
+  glDisable(GL_BLEND);
+
+  double dx = 0, dy = 0;
+  if (!puzzleCleared && puzzleTimer < 10.0) {
+    // EXTREME STRESS: Camera shake increases as time drops
+    double stress = (10.0 - puzzleTimer) / 10.0;
+    dx = (rand() % 9 - 4) * stress; // Up to 4px shake
+    dy = (rand() % 9 - 4) * stress;
+
+    // MELTDOWN ALERTS
+    iSetColor(255, 0, 0);
+    iText(770 + (int)dx, 470 + (int)dy, "CRITICAL: MELTDOWN",
+          GLUT_BITMAP_HELVETICA_10);
+    iText(770 + (int)dx, 455 + (int)dy, "STABILIZATION REQUIRED",
+          GLUT_BITMAP_HELVETICA_10);
+  } else if (!puzzleCleared && puzzleTimer < 25.0) {
+    dx = (rand() % 3) - 1;
+    dy = (rand() % 3) - 1;
+  }
+
+  // UI - Top Banner
   iSetColor(255, 255, 255);
   iText(400 + dx, 600 + dy, "STABILIZE GRAVITY CORE", GLUT_BITMAP_HELVETICA_18);
 
   char timeBuf[20];
   sprintf_s(timeBuf, "TIME: %.1fs", puzzleTimer);
-  if (puzzleTimer < 5.0)
-    iSetColor(255, 0, 0);
+  if (puzzleTimer < 10.0)
+    iSetColor(255, 50, 50); // Warning Red
+  else
+    iSetColor(0, 200, 255); // Docile Cyan
   iText(850 + dx, 600 + dy, timeBuf, GLUT_BITMAP_TIMES_ROMAN_24);
 
-  // Grid
+  // 5. CORE and LOCK Terminals (Hexagonal Style)
+  auto drawHexNode = [&](int x, int y, const char *label, bool active) {
+    if (active)
+      iSetColor(0, 255, 150);
+    else
+      iSetColor(200, 50, 50);
+
+    // Outer Glow
+    glEnable(GL_BLEND);
+    if (active)
+      glColor4f(0.0f, 1.0f, 0.6f, 0.3f);
+    else
+      glColor4f(0.8f, 0.2f, 0.2f, 0.3f);
+    iFilledCircle(x, y, 45);
+    glDisable(GL_BLEND);
+
+    // Base
+    iSetColor(10, 15, 20);
+    iFilledCircle(x, y, 35);
+    if (active)
+      iSetColor(0, 255, 150);
+    else
+      iSetColor(200, 50, 50);
+    iCircle(x, y, 35);
+    iCircle(x, y, 32);
+
+    iText(x - 22, y - 5, (char *)label, GLUT_BITMAP_HELVETICA_18);
+  };
+
+  drawHexNode(200 + dx, 470 + dy, "CORE", true);
+  drawHexNode(824 + dx, 150 + dy, "LOCK", puzzleCleared);
+
+  // 6. Connector Cables (Visual decoration)
+  iSetColor(30, 40, 50);
+  iLine(235 + dx, 470 + dy, 312, 470); // To Start
+  iLine(712, 170, 789 + dx, 150 + dy); // From End (Bottom 120+50=170 -> 150)
+
+  // 7. Grid of Tiles
   int startX = 312, startY = 120;
   int tileSize = 100;
   for (int i = 0; i < 4; i++) {
@@ -1561,21 +2603,28 @@ void drawPuzzle() {
     }
   }
 
-  // Terminals
-  iSetColor(0, 255, 0);
-  iText(200 + dx, 450 + dy, "CORE", GLUT_BITMAP_HELVETICA_18); // Top-Left
-  iSetColor(255, 0, 0);
-  iText(750 + dx, 150 + dy, "LOCK", GLUT_BITMAP_HELVETICA_18); // Bottom-Right
-
+  // 8. Success Message
   if (puzzleCleared) {
-    iSetColor(0, 255, 0);
-    iText(400, 300, "SYSTEM STABILIZED!", GLUT_BITMAP_TIMES_ROMAN_24);
+    glEnable(GL_BLEND);
+    glColor4f(0.0f, 1.0f, 0.5f, 0.2f);
+    iFilledRectangle(0, 260, 1024, 80);
+    glDisable(GL_BLEND);
+
+    iSetColor(0, 255, 150);
+    iText(startX + 65, 300, "SYSTEM STABILIZED!", GLUT_BITMAP_TIMES_ROMAN_24);
   }
 
-  // Chaos Indicator (Visual Only for impact)
-  if (puzzleTimer < 10.0) {
-    iSetColor(255, 0, 0);
-    iText(20, 20, "!!! GRAVITY SPIKE DETECTED !!!", GLUT_BITMAP_HELVETICA_12);
+  // 9. Chaos Warning
+  if (puzzleTimer < 10.0 && !puzzleCleared) {
+    static double alertAlpha = 0;
+    alertAlpha += 0.1;
+    glEnable(GL_BLEND);
+    glColor4f(1.0f, 0.0f, 0.0f, (float)(0.15 + 0.1 * sin(alertAlpha)));
+    iFilledRectangle(0, 0, 1024, 640);
+    glDisable(GL_BLEND);
+
+    iSetColor(255, 50, 50);
+    iText(412, 580, "!!! CRITICAL CORE SPIKE !!!", GLUT_BITMAP_HELVETICA_18);
   }
 }
 
@@ -1591,28 +2640,30 @@ void iKeyboard(unsigned char key) {
       gameState = MENU;
     }
   }
-  // ESC returns to menu from NEW_LEVEL
-  if (key == 27) {
-    if (gameState == NEW_LEVEL) {
-      gameState = MENU;
-    }
-  }
   if (key == 'm' || key == 'M') {
-    if (gameState != LEVEL1 && gameState != BOSS_LEVEL && gameState != NEW_LEVEL) {
+    if (gameState != LEVEL1 && gameState != BOSS_LEVEL) {
       gameState = MENU;
     }
   }
-
-  // New level WASD key handling
-  if (gameState == NEW_LEVEL) {
-    keyboardNewLevel(key);
-  }
-
 
   // Quick test: press T on menu to jump to boss level
   if ((key == 't' || key == 'T') && gameState == MENU) {
     gameState = BOSS_LEVEL;
     p3InitPhase3();
+  }
+
+  // Quick test: press L on menu to jump to lab level
+  if ((key == 'l' || key == 'L') && gameState == MENU) {
+    gameState = LAB_LEVEL;
+    initLabLevel();
+  }
+
+  // Laboratory shortcut: Dash
+  if (gameState == LAB_LEVEL) {
+    if ((key == 'x' || key == 'X') && labDashCooldown <= 0) {
+      labDashTimer = 0.4;
+      labDashCooldown = 3.0;
+    }
   }
 
   // Boss level controls
@@ -1657,18 +2708,30 @@ void iKeyboard(unsigned char key) {
         }
       }
     }
+    if (key == 'p' || key == 'P') {
+      double dx = phase3PlayerX - phase3BossX;
+      double dy = phase3PlayerY - phase3BossY;
+      double dist = sqrt(dx * dx + dy * dy);
+      if (strikeWindowActive) {
+        if (dist < 120) {
+          phase3BossHealth -= 25;
+          strikeWindowActive = false;
+          phase3BossAtkTimer = 2.0;
+        }
+      } else if (phase3CriticalStrikeReady) {
+        phase3BossHealth -= 60;
+        phase3CriticalStrikeReady = false;
+        phase3AwarenessLevel = 0;
+        phase3BossState = P3_OBSERVE;
+      } else if (dist < 100 && phase3AtkCooldown <= 0) {
+        phase3BossHealth -= 10;
+        phase3AtkCooldown = 1.0;
+      }
+    }
   }
-
 }
 
-void iKeyUp(unsigned char key) { 
-  keyStates[key] = false; 
-
-  // New level WASD key release
-  if (gameState == NEW_LEVEL) {
-    keyUpNewLevel(key);
-  }
-}
+void iKeyUp(unsigned char key) { keyStates[key] = false; }
 
 void iSpecialKeyboard(unsigned char key) {
   if (gameState == BOSS_LEVEL) {
@@ -1680,19 +2743,11 @@ void iSpecialKeyboard(unsigned char key) {
       gameState = MENU;
     }
   }
-  // New level arrow key handling
-  if (gameState == NEW_LEVEL) {
-    specialKeyboardNewLevel(key);
-  }
 }
 
 void iSpecialKeyUp(unsigned char key) {
   if (gameState == BOSS_LEVEL) {
     keyStates[key] = false;
-  }
-  // New level arrow key release
-  if (gameState == NEW_LEVEL) {
-    specialKeyUpNewLevel(key);
   }
 }
 
@@ -1714,21 +2769,17 @@ void iMouse(int button, int state, int mx, int my) {
       else if (mx >= 98 && mx <= 248 && my >= 200 && my <= 240) {
         gameState = CREDITS_STATE;
       }
-      // Check EXIT button
+      // Check LAB LEVEL button (NEW)
       else if (mx >= 98 && mx <= 248 && my >= 150 && my <= 190) {
+        gameState = LAB_LEVEL;
+        initLabLevel();
+      }
+      // Check EXIT button
+      else if (mx >= 98 && mx <= 248 && my >= 100 && my <= 140) {
         exit(0);
       }
 
-    } else if (gameState == GAME_OVER) {
-      gameState = MENU;
-    } else if (gameState == NEW_LEVEL) {
-      mouseNewLevel(button, state, mx, my);
-    } else if (gameState == CREDITS_STATE || gameState == OPTIONS_STATE) {
-      // Click anywhere to go back (Fallback for keyboard issues)
-      gameState = MENU;
-    }
-
-    else if (gameState == LEVEL1) {
+    } else if (gameState == LEVEL1) {
       // Trigger Shooting Animation
       player.isShooting = true;
       player.shootFrame = 0;
@@ -1752,6 +2803,16 @@ void iMouse(int button, int state, int mx, int my) {
           }
         }
       }
+    } else if (gameState == OPTIONS_STATE) {
+      if (mx >= 350 && mx <= 550 && my >= 130 && my <= 170) {
+        gameState = LAB_LEVEL;
+        initLabLevel();
+      } else {
+        gameState = MENU;
+      }
+    } else if (gameState == CREDITS_STATE) {
+      // Click anywhere to go back
+      gameState = MENU;
     } else if (gameState == FINAL_BG) {
       gameState = SURPRISE_SCREEN;
       surpriseTimer = 5.0;
@@ -1767,32 +2828,16 @@ void iMouse(int button, int state, int mx, int my) {
         int row = 3 - (my - startY) / tileSize; // Grid is drawn (3-i)
         if (row >= 0 && row < 4 && col >= 0 && col < 4) {
           grid[row][col].rotation = (grid[row][col].rotation + 1) % 4;
+          puzzlePlayerInteracted = true;
         }
       }
     } else if (gameState == WIN_SCREEN) {
       gameState = FINAL_BG;
-    } else if (gameState == BOSS_LEVEL) {
-      double dx = phase3PlayerX - phase3BossX;
-      double dy = phase3PlayerY - phase3BossY;
-      double dist = sqrt(dx * dx + dy * dy);
-      if (strikeWindowActive) {
-        if (dist < 120) {
-          phase3BossHealth -= 25;
-          strikeWindowActive = false;
-          phase3BossAtkTimer = 2.0;
-        }
-      } else if (phase3CriticalStrikeReady) {
-        phase3BossHealth -= 60;
-        phase3CriticalStrikeReady = false;
-        phase3AwarenessLevel = 0;
-        phase3BossState = P3_OBSERVE;
-      } else if (dist < 100 && phase3AtkCooldown <= 0) {
-        // Basic melee attack - always available when close enough
-        phase3BossHealth -= 10;
-        phase3AtkCooldown = 1.0;
-      }
+    } else if (gameState == BOSS_DEAD_IMAGE) {
+      gameState = LAB_TRANSITION;
+      labTransitionTimer = 3.0;
+      labTransitionPhase = 0;
     }
-
   }
 
   if (button == GLUT_RIGHT_BUTTON && state == GLUT_DOWN) {
@@ -1805,13 +2850,6 @@ void fixedUpdate() {
     if (p3IsKeyPressed(27) || p3IsKeyPressed('b') || p3IsKeyPressed('B')) {
       gameState = MENU;
     }
-  }
-
-  // ============================================================
-  // NEW SIDE-SCROLLING LEVEL UPDATE
-  // ============================================================
-  if (gameState == NEW_LEVEL) {
-    updateNewLevel();
   }
 
   if (gameState == LEVEL1) {
@@ -1995,7 +3033,10 @@ void fixedUpdate() {
       }
     }
     if (allDead) {
-      initNewLevel(); // Transition to Side-Scrolling Level
+      gameState = PUZZLE_TRANSITION;
+      puzzleTransitionTimer = 6.0;
+      puzzleTransitionPhase = 0;
+      puzzleTransitionAlpha = 0;
     }
   }
 
@@ -2008,6 +3049,22 @@ void fixedUpdate() {
   }
 
   if (gameState == PUZZLE_SCREEN) {
+    puzzleEnergyTimer += 0.05;
+    if (puzzleEnergyTimer > 1.0)
+      puzzleEnergyTimer -= 1.0;
+
+    for (int i = 0; i < 40; i++) {
+      puzzleParticles[i].y += puzzleParticles[i].speed;
+      if (puzzleParticles[i].y > 640) {
+        puzzleParticles[i].y = -10;
+        puzzleParticles[i].x = rand() % 1024;
+      }
+    }
+    // Check for completion ONLY after interaction
+    if (puzzlePlayerInteracted && isPuzzleAlreadySolved()) {
+      puzzleCleared = true;
+    }
+
     if (!puzzleCleared) {
       puzzleTimer -= 0.016;
 
@@ -2072,7 +3129,17 @@ void fixedUpdate() {
                   return (port == 3 || port == 0);
               }
               if (type == 2)
-                return true; // Cross
+                return true;
+              if (type == 3) { // T-Junction
+                if (rot == 0)
+                  return (port == 3 || port == 1 || port == 0);
+                if (rot == 1)
+                  return (port == 0 || port == 1 || port == 2);
+                if (rot == 2)
+                  return (port == 1 || port == 2 || port == 3);
+                if (rot == 3)
+                  return (port == 2 || port == 3 || port == 0);
+              }
               return false;
             };
 
@@ -2196,6 +3263,49 @@ void fixedUpdate() {
     updatePhase3Boss();
     handlePhase3Stealth();
     handlePhase3Combat();
+  } else if (gameState == LAB_TRANSITION) {
+    labTransitionTimer -= 0.016;
+    if (labTransitionPhase == 0 && labTransitionTimer <= 0) {
+      labTransitionPhase = 1;
+      labTransitionTimer = 2.0;
+    } else if (labTransitionPhase == 1 && labTransitionTimer <= 0) {
+      labTransitionPhase = 2;
+      labTransitionTimer = 0.5;
+    } else if (labTransitionPhase == 2 && labTransitionTimer <= 0) {
+      gameState = LAB_LEVEL;
+      initLabLevel();
+    }
+  } else if (gameState == LAB_LEVEL) {
+    updateLabLevel();
+  } else if (gameState == PUZZLE_TRANSITION) {
+    puzzleTransitionTimer -= 0.016;
+    if (puzzleTransitionPhase == 0) {
+      // Phase 0: Show Level Cleared (6.0 to 3.0s)
+      puzzleTransitionAlpha = 0;
+      if (puzzleTransitionTimer <= 3.0) {
+        puzzleTransitionPhase = 1;
+      }
+    } else if (puzzleTransitionPhase == 1) {
+      // Phase 1: Show background and message (3.0 to 1.0s)
+      puzzleTransitionAlpha += 0.02; // Fade in BG
+      if (puzzleTransitionAlpha > 1.0)
+        puzzleTransitionAlpha = 1.0;
+
+      if (puzzleTransitionTimer <= 1.0) {
+        puzzleTransitionPhase = 2;
+        puzzleTransitionAlpha = 1.0;
+      }
+    } else if (puzzleTransitionPhase == 2) {
+      // Phase 2: Fade out to puzzle (3 to 4s)
+      puzzleTransitionAlpha -= 0.02; // Fade out UI/BG
+      if (puzzleTransitionAlpha < 0)
+        puzzleTransitionAlpha = 0;
+
+      if (puzzleTransitionTimer <= 0) {
+        gameState = PUZZLE_SCREEN;
+        initPuzzle();
+      }
+    }
   }
 }
 
@@ -2210,16 +3320,9 @@ int main() {
   finalBG = iLoadImage("Assets/1st bg.png");
   digitalRainBG = iLoadImage("Assets/Digital Rain.png");
   secondBG = iLoadImage("Assets/vault room.png");
-
-  // Load new level backgrounds
-  newLevelBG[0] = iLoadImage("Assets/BG_1.png");
-  newLevelBG[1] = iLoadImage("Assets/BG_2.png");
-  newLevelBG[2] = iLoadImage("Assets/BG_3.png");
-
-  // Load new player spritesheet
-  newPlayerSpritesheet = iLoadImage("Assets/PC2.png");
-  npc1Spritesheet = iLoadImage("Assets/NPC.png");
-  npc2Spritesheet = iLoadImage("Assets/NPC2.png");
+  chatgptImage =
+      iLoadImage("Assets/ChatGPT Image Feb 28, 2026, 01_02_51 AM.png");
+  puzzleTransitionBG = iLoadImage("Assets/2nd bg.png");
 
   // Opening/Loading the audio files
   // mciSendString("open \"Audios/background.mp3\" alias bgsong", NULL, 0,
@@ -2231,268 +3334,4 @@ int main() {
 
   iStart();
   return 0;
-}
-
-// ============================================================
-// NEW SIDE-SCROLLING LEVEL IMPLEMENTATIONS
-// ============================================================
-
-void initNewLevel() {
-  gameState = NEW_LEVEL;
-  scrollX = 0;
-  newPlayerX = 200;
-  newPlayerY = GROUND_Y;
-  newPlayerVelY = 0;
-  newPlayerOnGround = true;
-  newPlayerFrame = 0;
-  newPlayerDir = 1;
-  newPlayerMoving = false;
-  newPlayerIsShooting = false;
-  newPlayerShootTimer = 0;
-  newPlayerFireCooldown = 0;
-  arrowKeyLeft = false;
-  arrowKeyRight = false;
-  arrowKeyUp = false;
-  newPlayerHealth = 100;
-  for (int i = 0; i < MAX_NEW_BULLETS; i++) {
-    newBullets[i].active = false;
-  }
-
-  // Initialize Enemies
-  for (int i = 0; i < MAX_NEW_ENEMIES; i++) {
-    newEnemies[i].active = false;
-  }
-  
-  // Let's spawn a mix of NPC1 and NPC2 down the absolute right
-  // The level width is 3072.
-  int spawnXs[4] = {800, 1500, 2200, 2800};
-  for (int i = 0; i < 4; i++) {
-    newEnemies[i].active = true;
-    newEnemies[i].x = spawnXs[i];
-    newEnemies[i].y = GROUND_Y;
-    newEnemies[i].health = 200;
-    newEnemies[i].type = 1; // All enemies use NPC.png
-    newEnemies[i].dir = -1; // Face left towards player initially
-    newEnemies[i].frame = 0;
-    newEnemies[i].animTimer = 0;
-    newEnemies[i].isShooting = false;
-    newEnemies[i].shootTimer = 0;
-    newEnemies[i].fireCooldown = 0;
-  }
-}
-
-void mouseNewLevel(int button, int state, int mx, int my) {
-  if (newPlayerFireCooldown <= 0) {
-    // Find an inactive bullet and fire it
-    for (int i = 0; i < MAX_NEW_BULLETS; i++) {
-      if (!newBullets[i].active) {
-        newBullets[i].active = true;
-        newBullets[i].isPlayerBullet = true; // Player fired this bullet
-        // Fix: World X = Player Screen X + Current Scroll Offset
-        newBullets[i].x = newPlayerX + scrollX + (newPlayerDir == 1 ? 40 : -40);
-        newBullets[i].y = newPlayerY + 15; // Gun height
-        newBullets[i].dir = newPlayerDir;
-        newBullets[i].speed = 6.0; // Reduced laser speed from 10.0 to 6.0
-
-        newPlayerIsShooting = true;
-        newPlayerShootTimer = 0.2; // Show shooting pose for 0.2 seconds
-        newPlayerFireCooldown = 0.5; // Cooldown limit: Wait 0.5 seconds before firing again
-        break;
-      }
-    }
-  }
-}
-
-void keyboardNewLevel(unsigned char key) {
-  if (key == 'A' || key == 'a') arrowKeyLeft = true;
-  if (key == 'D' || key == 'd') arrowKeyRight = true;
-  if (key == 'W' || key == 'w') arrowKeyUp = true;
-}
-
-void keyUpNewLevel(unsigned char key) {
-  if (key == 'A' || key == 'a') arrowKeyLeft = false;
-  if (key == 'D' || key == 'd') arrowKeyRight = false;
-  if (key == 'W' || key == 'w') arrowKeyUp = false;
-}
-
-void specialKeyboardNewLevel(unsigned char key) {
-  if (key == GLUT_KEY_LEFT) arrowKeyLeft = true;
-  if (key == GLUT_KEY_RIGHT) arrowKeyRight = true;
-  if (key == GLUT_KEY_UP) arrowKeyUp = true;
-}
-
-void specialKeyUpNewLevel(unsigned char key) {
-  if (key == GLUT_KEY_LEFT) arrowKeyLeft = false;
-  if (key == GLUT_KEY_RIGHT) arrowKeyRight = false;
-  if (key == GLUT_KEY_UP) arrowKeyUp = false;
-}
-
-void updateNewLevel() {
-  // Check for game over
-  if (newPlayerHealth <= 0) {
-    gameState = GAME_OVER;
-    return;
-  }
-  newPlayerMoving = false;
-
-  // Horizontal movement: scroll the world
-  if (arrowKeyRight) {
-    scrollX += SCROLL_SPEED;
-    newPlayerDir = 1;
-    newPlayerMoving = true;
-  }
-  if (arrowKeyLeft) {
-    scrollX -= SCROLL_SPEED;
-    newPlayerDir = -1;
-    newPlayerMoving = true;
-  }
-
-  // Wrap scrollX to stay in positive range
-  if (scrollX < 0) scrollX += TOTAL_SCROLL_WIDTH;
-  if (scrollX >= TOTAL_SCROLL_WIDTH) scrollX -= TOTAL_SCROLL_WIDTH;
-
-  // Jump
-  if (arrowKeyUp && newPlayerOnGround) {
-    newPlayerVelY = JUMP_FORCE;
-    newPlayerOnGround = false;
-  }
-
-  // Apply gravity
-  if (!newPlayerOnGround) {
-    newPlayerVelY -= GRAVITY;
-    newPlayerY += newPlayerVelY;
-    if (newPlayerY <= GROUND_Y) {
-      newPlayerY = GROUND_Y;
-      newPlayerVelY = 0;
-      newPlayerOnGround = true;
-    }
-  }
-
-  // Walk animation (cycle through frames when moving)
-  if (newPlayerMoving) {
-    newPlayerAnimTimer += 0.3; // Speed up animation slightly for 8-frame cycle
-    if (newPlayerAnimTimer > 1.0) {
-      newPlayerAnimTimer = 0;
-      newPlayerFrame = (newPlayerFrame + 1) % 8; // 8-frame cycle
-    }
-  } else {
-    newPlayerAnimTimer = 0;
-    newPlayerFrame = 0;
-  }
-
-  // Shooting animation timer
-  if (newPlayerIsShooting) {
-    newPlayerShootTimer -= 0.05; // fixed update tick rate approx
-    if (newPlayerShootTimer <= 0) {
-      newPlayerIsShooting = false;
-    }
-  }
-
-  if (newPlayerFireCooldown > 0) {
-    newPlayerFireCooldown -= 0.05;
-  }
-
-  // Update bullets (all bullet positions are in WORLD space)
-  for (int i = 0; i < MAX_NEW_BULLETS; i++) {
-    if (newBullets[i].active) {
-      newBullets[i].x += newBullets[i].speed * newBullets[i].dir;
-      
-      // Check collisions - all in world space
-      if (newBullets[i].isPlayerBullet) { // Check collision against enemies
-        for (int e = 0; e < MAX_NEW_ENEMIES; e++) {
-          if (newEnemies[e].active) {
-            // Both bullet and enemy are in world space
-            double dist = sqrt(pow(newBullets[i].x - newEnemies[e].x, 2) + pow(newBullets[i].y - newEnemies[e].y, 2));
-            if (dist < 40) { // hit radius
-              newEnemies[e].health -= 25;
-              newBullets[i].active = false;
-              if (newEnemies[e].health <= 0) {
-                newEnemies[e].active = false;
-              }
-              break;
-            }
-          }
-        }
-      } else { // Enemy bullet: Check collision against player
-        // Convert player screen position to world space for comparison
-        double playerWorldX = newPlayerX + scrollX;
-        double dist = sqrt(pow(newBullets[i].x - playerWorldX, 2) + pow(newBullets[i].y - newPlayerY, 2));
-           if (dist < 40) { // hit radius
-             newPlayerHealth -= 10;
-             newBullets[i].active = false;
-             if (newPlayerHealth < 0) newPlayerHealth = 0;
-           }
-      }
-      
-      // Deactivate if off-screen (world-space bounds relative to current scroll)
-      double bulletScreenX = newBullets[i].x - scrollX;
-      if (bulletScreenX < -50 || bulletScreenX > 1050) {
-        newBullets[i].active = false;
-      }
-    }
-  }
-
-  // Update Enemies (AI and Animation)
-  for (int i = 0; i < MAX_NEW_ENEMIES; i++) {
-    if (newEnemies[i].active) {
-      double enX = newEnemies[i].x - scrollX; // Enemy position on screen
-      
-      // Decrease timers
-      if (newEnemies[i].fireCooldown > 0) newEnemies[i].fireCooldown -= 0.05;
-      if (newEnemies[i].isShooting) {
-        newEnemies[i].shootTimer -= 0.05;
-        if (newEnemies[i].shootTimer <= 0) newEnemies[i].isShooting = false;
-      }
-
-      // Basic AI Logic: only act if roughly visible
-      if (enX > -200 && enX < 1200) {
-        // Distance to player
-        double distToPlayerX = newPlayerX - enX;
-        
-        if (abs(distToPlayerX) > 250) { // Walk towards player if far
-          // Move towards player
-          newEnemies[i].dir = (distToPlayerX > 0) ? 1 : -1;
-          newEnemies[i].x += 4.0 * newEnemies[i].dir; // Speed 4.0 (Synchronized with player)
-          
-          // No frame cycling needed - using fixed side-facing frame from NPC.png
-        } else { // Stop and shoot if in range
-           // Stop and shoot
-           newEnemies[i].dir = (distToPlayerX > 0) ? 1 : -1; // face player
-           newEnemies[i].frame = 0; // idle frame while shooting
-           
-           if (newEnemies[i].fireCooldown <= 0) {
-             // Fire!
-             for (int b = 0; b < MAX_NEW_BULLETS; b++) {
-               if (!newBullets[b].active) {
-                 newBullets[b].active = true;
-                 newBullets[b].isPlayerBullet = false; // Enemy bullet
-                 // Fix: Enemy X is already in world space
-                 newBullets[b].x = newEnemies[i].x + (newEnemies[i].dir == 1 ? 40 : -40);
-                 newBullets[b].y = newEnemies[i].y + 15;
-                 newBullets[b].dir = newEnemies[i].dir;
-                 newBullets[b].speed = 5.0; // Enemy bullet is slightly slower
-                 
-                 newEnemies[i].isShooting = true;
-                 newEnemies[i].shootTimer = 0.2;
-                 newEnemies[i].fireCooldown = 1.5; // Enemy shoots every 1.5s
-                 break;
-               }
-             }
-           }
-        }
-      }
-    }
-  }
-
-  // Check for Level Completion (Side-Scrolling)
-  bool anyAlive = false;
-  for (int i = 0; i < MAX_NEW_ENEMIES; i++) {
-    if (newEnemies[i].active) {
-      anyAlive = true;
-      break;
-    }
-  }
-  if (!anyAlive) {
-    gameState = WIN_SCREEN; // Continue to the rest of the game
-  }
 }
