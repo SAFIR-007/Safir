@@ -72,9 +72,13 @@
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <ItemGroup>
+    <ClInclude Include="GameShared.h" />
+    <ClInclude Include="GameUI.h" />
     <ClInclude Include="level1ss.h" />
     <ClInclude Include="BounceShooter.h" />
     <ClInclude Include="Puzzle.h" />
     <ClInclude Include="Boss1.h" />
+    <ClInclude Include="Lab.h" />
+    <ClInclude Include="SilentFoundry.h" />
   </ItemGroup>
 </Project>
